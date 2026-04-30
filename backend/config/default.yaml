@@ -1,0 +1,41 @@
+# Default configuration — override with config/local.yaml or APP_* env vars
+server:
+  host: "0.0.0.0"
+  port: 3001
+  timeout_seconds: 30
+  shutdown_timeout_seconds: 30
+  cors_origins:
+    - "http://localhost:3000"
+
+database:
+  driver: mssql
+  database_url: "mssql://sa:YourStrong!Passw0rd@localhost:1433/fullstack_template"
+  max_connections: 20
+  connect_retry_attempts: 5
+  connect_retry_delay_ms: 2000
+  encrypt: false
+
+auth:
+  enabled: false
+  issuer_url: "http://localhost:8080/dex"
+  audience:
+    - "fullstack-template"
+  jwks_cache_duration_secs: 3600
+  allowed_email_domains: []
+  role_claim_source: "groups"
+  discovery_mode: "discovery"
+  danger_accept_invalid_certs: false
+  # manual_endpoints:
+  #   jwks_uri: "https://idp.example.com/oauth/v2/keys"
+  #   issuer: "https://idp.example.com"
+  #   authorization_endpoint: "https://idp.example.com/oauth/v2/authorize"
+  #   token_endpoint: "https://idp.example.com/oauth/v2/token"
+
+observability:
+  log_format: "pretty"
+  log_level: "info"
+  service_name: "fullstack-template"
+
+grpc:
+  host: "0.0.0.0"
+  port: 50051

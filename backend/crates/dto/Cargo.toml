@@ -1,0 +1,11 @@
+[package]
+name = "dto"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+model = { path = "../model" }
+serde.workspace = true
+uuid.workspace = true
+time.workspace = true
+utoipa.workspace = true

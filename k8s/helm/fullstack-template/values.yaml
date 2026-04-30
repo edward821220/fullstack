@@ -1,0 +1,69 @@
+replicaCount: 2
+
+image:
+  backend:
+    repository: your-registry/fullstack-template-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: your-registry/fullstack-template-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+env:
+  oidcIssuerUrl: "https://keycloak.example.com/realms/fullstack-template"
+  oidcClientId: "fullstack-template-client"
+  authEnabled: true
+  authAudience: []
+  authAllowedEmailDomains: []
+  authRoleClaimSource: "groups"
+  authDiscoveryMode: "discovery"
+  # manual_endpoints — set when authDiscoveryMode is "manual"
+  authManualJwksUri: ""
+  authManualIssuer: ""
+  authDangerAcceptInvalidCerts: false
+  databaseEncrypt: true
+  logLevel: "info"
+
+# Secrets — for production use ExternalSecret or Vault integration instead.
+# These values are base64-encoded by the chart; provide plain text values here.
+secrets:
+  databaseUrl: ""
+  oidcClientSecret: ""
+  nextauthSecret: ""
+
+service:
+  backend:
+    type: ClusterIP
+    restPort: 3001
+    grpcPort: 50051
+  frontend:
+    type: ClusterIP
+    port: 3000
+
+ingress:
+  enabled: true
+  host: fullstack-template.example.com
+  tlsSecret: fullstack-template-tls
+
+resources:
+  backend:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  frontend:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "300m"
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80

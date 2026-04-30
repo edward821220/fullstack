@@ -1,0 +1,11 @@
+[package]
+name = "config"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+figment.workspace = true
+snafu.workspace = true
+tiberius.workspace = true
+url.workspace = true

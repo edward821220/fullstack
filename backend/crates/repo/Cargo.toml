@@ -1,0 +1,25 @@
+[package]
+name = "repo"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+config = { path = "../config" }
+model = { path = "../model" }
+sqlx.workspace = true
+tiberius.workspace = true
+bb8-tiberius.workspace = true
+bb8.workspace = true
+tokio-util.workspace = true
+url.workspace = true
+async-trait.workspace = true
+snafu.workspace = true
+uuid.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["net"] }
+
+[dev-dependencies]
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+migration = { path = "../migration" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,10 @@
+[package]
+name = "model"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+time.workspace = true
+sqlx.workspace = true

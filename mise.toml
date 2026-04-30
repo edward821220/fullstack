@@ -1,0 +1,17 @@
+[tools]
+rust = "1.90.0"
+node = "24"
+pnpm = "10"
+
+[env]
+CARGO_TERM_COLOR = "always"
+
+[tasks]
+dev-backend = { run = "cargo run --bin server", dir = "backend" }
+dev-frontend = { run = "pnpm dev", dir = "frontend" }
+
+fmt = { run = "cargo fmt --all && cd ../frontend && pnpm format", dir = "backend" }
+
+check = "cd backend && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check --all-targets --all-features && cargo test --workspace && cd .. && cd frontend && pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+check-backend = { run = "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check --all-targets --all-features && cargo test --workspace", dir = "backend" }
+check-frontend = { run = "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test", dir = "frontend" }

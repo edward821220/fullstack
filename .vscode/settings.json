@@ -1,0 +1,15 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "rust-analyzer.check.command": "clippy",
+  "eslint.workingDirectories": ["frontend"],
+  "prettier.requireConfig": true,
+  "tailwindCSS.experimental.configFile": "frontend/tailwind.config.ts",
+  "cSpell.enabled": true
+}

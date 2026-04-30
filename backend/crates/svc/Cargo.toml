@@ -1,0 +1,14 @@
+[package]
+name = "svc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+repo = { path = "../repo" }
+model = { path = "../model" }
+dto = { path = "../dto" }
+config = { path = "../config" }
+async-trait.workspace = true
+snafu.workspace = true
+tracing.workspace = true
+uuid.workspace = true

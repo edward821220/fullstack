@@ -1,0 +1,28 @@
+pre-commit:
+  parallel: true
+  commands:
+    backend-check:
+      glob: "backend/**/*.rs"
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    backend-fmt:
+      glob: "backend/**/*.rs"
+      run: cargo fmt --all
+      stage_fixed: true
+    frontend-fmt:
+      glob: "frontend/**/*.{ts,tsx,js,jsx,json,css,md,mjs}"
+      run: pnpm -C frontend format
+      stage_fixed: true
+    frontend-lint:
+      glob: "frontend/**/*.{ts,tsx,js,jsx}"
+      run: pnpm -C frontend lint
+    typos:
+      glob: "**/*.{rs,ts,tsx,md,yml,yaml,toml}"
+      run: typos
+
+pre-push:
+  parallel: true
+  commands:
+    test-backend:
+      run: cargo test --workspace
+    test-frontend:
+      run: pnpm -C frontend test

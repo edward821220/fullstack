@@ -1,0 +1,84 @@
+[workspace]
+members = [
+  "crates/config",
+  "crates/dto",
+  "crates/model",
+  "crates/migration",
+  "crates/repo",
+  "crates/svc",
+  "crates/server",
+  "crates/grpc",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/your-org/fullstack-template"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+redundant_clone = "warn"
+needless_collect = "warn"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.52", features = ["full"] }
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Database: PostgreSQL
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros"] }
+# Database: MS SQL Server
+tiberius = { version = "0.12", features = ["time"] }
+bb8-tiberius = "0.16"
+bb8 = "0.9"
+tokio-util = { version = "0.7", features = ["compat"] }
+# Database migrations
+refinery = { version = "0.8", features = ["tokio-postgres", "tiberius"] }
+tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }
+# Config
+figment = { version = "0.10", features = ["yaml", "env", "toml"] }
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "timeout", "limit", "compression-gzip", "compression-br", "trace", "request-id"] }
+# gRPC
+tonic = "0.14"
+tonic-health = "0.14"
+tonic-reflection = "0.14"
+tonic-build = "0.14"
+tonic-prost-build = "0.14"
+prost = "0.14"
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.32"
+opentelemetry = "0.31"
+opentelemetry-otlp = "0.31"
+opentelemetry_sdk = "0.31"
+# Error handling
+snafu = "0.9"
+# Auth
+jsonwebtoken = "9"
+openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Time
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+# API docs
+utoipa = { version = "5", features = ["axum_extras", "uuid"] }
+utoipa-scalar = { version = "0.3", features = ["axum"] }
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = "0.1"
+url = "2"
+
+# Dev-only: integration tests
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres", "mssql_server"] }

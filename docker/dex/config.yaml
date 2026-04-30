@@ -1,0 +1,55 @@
+issuer: http://localhost:8080/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:8080
+
+expiry:
+  idTokens: "24h"
+  authRequests: "24h"
+
+oauth2:
+  responseTypes: ["code"]
+  skipApprovalScreen: true
+
+staticClients:
+  - id: fullstack-template
+    secret: fullstack-template-secret
+    name: "Fullstack Template (Local Dev)"
+    redirectURIs:
+      - "http://localhost:3000/api/auth/callback/oidc"
+
+enablePasswordDB: true
+
+staticPasswords:
+  - email: "admin@localhost"
+    hash: "$2y$10$sxfXzWNUO2cW5XwzIXfeg.cHbhGBjE1XczdZuTyTkiYVELX8.zSHm"
+    username: "admin"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+    name: "Admin User"
+    emailVerified: true
+    preferredUsername: "admin"
+    groups:
+      - "admin"
+
+  - email: "manager@localhost"
+    hash: "$2y$10$tRAVmoaksd.JfWsoyrUUo.259i3lI05v0H7U.uk7V7FjM0qkb4Zdi"
+    username: "manager"
+    userID: "41331323-6f44-45e6-b3b9-2c4b60c02be5"
+    name: "Manager User"
+    emailVerified: true
+    preferredUsername: "manager"
+    groups:
+      - "manager"
+
+  - email: "user@localhost"
+    hash: "$2y$10$Z80ylod7hMFGE3Z.Z66Cu.NmbDwwKXMiCZ2GbyjRRjBHDKK40gzVS"
+    username: "user"
+    userID: "c12b4e80-a5d3-4f18-b9cb-a2e5e6f7c8d9"
+    name: "Regular User"
+    emailVerified: true
+    preferredUsername: "user"
+    groups:
+      - "user"

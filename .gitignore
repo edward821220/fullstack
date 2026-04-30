@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+target/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Config (contains secrets)
+backend/config/local.yaml
+
+# Generated OpenAPI spec
+backend/openapi.json
+
+# gRPC protobuf descriptor files
+*.bin
+
+# CoC
+.cursor/
+.trae/
