@@ -4,6 +4,7 @@ node = "24"
 pnpm = "10"
 lefthook = "latest"
 "github:crate-ci/typos" = "latest"
+committed = "latest"
 
 [env]
 CARGO_TERM_COLOR = "always"

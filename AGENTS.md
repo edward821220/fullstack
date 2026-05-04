@@ -159,4 +159,4 @@ This runs the full backend and frontend verification flow via `mise`: Rust/TypeS
 
 ## Commits
 
-Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `ci:`, `perf:`.
+Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`. Enforced by `committed` via lefthook `commit-msg` hook.

@@ -1,17 +1,32 @@
-# ├── Stage 1: Build
-FROM rust:1.90-slim-bookworm AS builder
+# ├── Stage 1: Chef
+FROM rust:1.90-slim-bookworm AS chef
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y pkg-config libssl-dev protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+RUN cargo install cargo-chef --locked
 
 WORKDIR /app
+
+# ├── Stage 2: Planner
+FROM chef AS planner
 COPY backend/Cargo.toml backend/Cargo.lock ./
 COPY backend/crates/ crates/
 COPY proto/ ../proto/
+RUN cargo chef prepare --recipe-path recipe.json
 
+# ├── Stage 3: Builder
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+COPY --from=planner /proto /proto
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/crates/ crates/
+COPY proto/ ../proto/
 RUN cargo build --release -p server && \
     cp target/release/server /app/server
 
-# ├── Stage 2: Runtime
+# ├── Stage 4: Runtime
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && \

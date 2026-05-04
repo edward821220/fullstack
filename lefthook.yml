@@ -1,3 +1,9 @@
+commit-msg:
+  parallel: true
+  jobs:
+    - name: commitlint
+      run: mise exec -- committed --commit-file {1}
+
 pre-commit:
   parallel: true
   jobs:

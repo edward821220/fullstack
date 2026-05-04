@@ -28,8 +28,9 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 Install [mise](https://mise.jdx.dev), then:
 
 ```bash
-mise install   # Rust 1.90, Node 24, pnpm 10, lefthook, typos
-mise exec -- lefthook install
+mise install   # Rust, Node, pnpm, lefthook, typos, committed
+mise trust
+lefthook install
 ```
 
 ## Quick Start
@@ -55,10 +56,11 @@ pnpm -C frontend install
 mise run dev:fe
 ```
 
-### 3. (Optional) Full Stack with Dex OIDC
+### 3. (Optional) Start Local OIDC Services
 
 ```bash
 docker compose --profile full up -d
+# Starts Dex + MS SQL Server for local auth testing
 # Dex is pre-configured with test users (admin/manager/user)
 ```
 
@@ -107,7 +109,8 @@ Enable auth: set `auth.enabled: true` in `backend/config/default.yaml` (disabled
 
 #### Local OIDC with Dex
 
-1. Start the full stack: `docker compose --profile oidc up -d`
+1. Start Dex only: `docker compose --profile oidc up -d`
+   Or start Dex + MS SQL Server together: `docker compose --profile full up -d`
 2. Copy `frontend/.env.example` to `frontend/.env.local` (pre-configured for Dex)
 3. Enable auth in backend config: `APP_AUTH__ENABLED=true`
 4. Test users: `admin`/`Admin123!`, `manager`/`Manager123!`, `user`/`User123!`
