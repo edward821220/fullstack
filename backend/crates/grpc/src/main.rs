@@ -1,73 +1,58 @@
+use std::time::Duration;
+
 use config::AppConfig;
-use std::net::SocketAddr;
-use tonic::transport::Server;
-
-mod proto {
-    pub mod greetings {
-        pub mod v1 {
-            tonic::include_proto!("greetings.v1");
-        }
-    }
-}
-
-use proto::greetings::v1::{
-    HealthCheckRequest, HealthCheckResponse, SayHelloRequest, SayHelloResponse,
-    greetings_service_server::{GreetingsService, GreetingsServiceServer},
-};
-
-pub struct GreetingsImpl;
-
-#[tonic::async_trait]
-impl GreetingsService for GreetingsImpl {
-    async fn say_hello(
-        &self,
-        request: tonic::Request<SayHelloRequest>,
-    ) -> Result<tonic::Response<SayHelloResponse>, tonic::Status> {
-        let name = request.into_inner().name;
-        Ok(tonic::Response::new(SayHelloResponse {
-            message: format!("Hello, {}!", name),
-        }))
-    }
-
-    async fn health_check(
-        &self,
-        _request: tonic::Request<HealthCheckRequest>,
-    ) -> Result<tonic::Response<HealthCheckResponse>, tonic::Status> {
-        Ok(tonic::Response::new(HealthCheckResponse {
-            status: "SERVING".to_owned(),
-        }))
-    }
-}
+use server::{grpc, telemetry::init_tracing};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
-
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = AppConfig::load()?;
+    config.validate()?;
 
-    migration::run(&config.database).await?;
+    let telemetry = init_tracing(&config)?;
 
-    let addr: SocketAddr = format!("{}:{}", config.grpc.host, config.grpc.port).parse()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    migration::run(&config.database)
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
 
-    let (health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter
-        .set_serving::<GreetingsServiceServer<GreetingsImpl>>()
-        .await;
+    let repo = connect_to_database(&config).await?;
+    let addr = config.grpc_addr()?;
 
-    tracing::info!("gRPC server listening on {}", addr);
+    tracing::info!("Standalone gRPC server listening on {}", addr);
 
-    Server::builder()
-        .add_service(health_service)
-        .add_service(GreetingsServiceServer::new(GreetingsImpl))
-        .serve_with_incoming_shutdown(
-            tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async {
-                tokio::signal::ctrl_c().await.ok();
-                tracing::info!("gRPC server graceful shutdown");
-            },
-        )
-        .await?;
+    grpc::serve(config, repo, addr).await?;
+
+    telemetry.shutdown();
 
     Ok(())
+}
+
+async fn connect_to_database(
+    config: &AppConfig,
+) -> Result<Box<dyn repo::UserRepo>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut attempt = 0;
+
+    loop {
+        attempt += 1;
+
+        match repo::connect(&config.database).await {
+            Ok(repo) => return Ok(repo),
+            Err(error) => {
+                if attempt >= config.database.connect_retry_attempts {
+                    return Err(Box::new(std::io::Error::other(error.to_string())));
+                }
+
+                tracing::warn!(
+                    "Database connection attempt {}/{} failed: {}. Retrying...",
+                    attempt,
+                    config.database.connect_retry_attempts,
+                    error
+                );
+
+                tokio::time::sleep(Duration::from_millis(
+                    config.database.connect_retry_delay_ms,
+                ))
+                .await;
+            }
+        }
+    }
 }

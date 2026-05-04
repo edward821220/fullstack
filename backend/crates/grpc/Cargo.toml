@@ -14,6 +14,7 @@ model = { path = "../model" }
 dto = { path = "../dto" }
 config = { path = "../config" }
 migration = { path = "../migration" }
+server = { path = "../server" }
 tonic.workspace = true
 tonic-health.workspace = true
 tonic-prost = "0.14"

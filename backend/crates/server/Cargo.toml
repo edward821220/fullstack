@@ -23,6 +23,15 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp = { workspace = true, features = [
+  "trace",
+  "grpc-tonic",
+  "http-proto",
+  "reqwest-client",
+] }
+opentelemetry_sdk.workspace = true
 jsonwebtoken.workspace = true
 openidconnect.workspace = true
 reqwest.workspace = true
@@ -36,6 +45,7 @@ tonic-health.workspace = true
 tonic-prost = "0.14"
 prost.workspace = true
 tokio-stream = "0.1"
+axum-prometheus = "0.10"
 
 [build-dependencies]
 tonic-prost-build.workspace = true

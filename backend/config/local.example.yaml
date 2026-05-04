@@ -1,0 +1,37 @@
+server:
+  port: 3001
+
+database:
+  driver: mssql
+  database_url: "mssql://sa:YourStrong!Passw0rd@localhost:1433/fullstack_template"
+  encrypt: false
+
+auth:
+  enabled: true
+  issuer_url: "http://localhost:8080/dex"
+  audience:
+    - "fullstack-template"
+  allowed_email_domains:
+    - "bank.local"
+  role_claim_source: "groups"
+  discovery_mode: "discovery"
+  danger_accept_invalid_certs: false
+  # manual_endpoints:
+  #   jwks_uri: "https://idp.bank.internal/oauth2/jwks"
+  #   issuer: "https://idp.bank.internal"
+  #   authorization_endpoint: "https://idp.bank.internal/oauth2/authorize"
+  #   token_endpoint: "https://idp.bank.internal/oauth2/token"
+
+observability:
+  log_format: "json"
+  log_level: "info,server=debug,grpc=debug"
+  service_name: "fullstack-template"
+  metrics_enabled: true
+  otlp:
+    enabled: true
+    endpoint: "http://localhost:4318/v1/traces"
+    protocol: "http"
+    timeout_seconds: 5
+
+grpc:
+  port: 50051

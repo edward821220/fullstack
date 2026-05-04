@@ -17,6 +17,12 @@ use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
 
 #[derive(Debug, Clone)]
+pub enum AuthFailure {
+    Unauthorized(String),
+    Forbidden(String),
+}
+
+#[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
     pub email: String,
@@ -91,6 +97,45 @@ impl OidcValidator {
             metadata_cache: Mutex::new(None),
             http_client,
         }
+    }
+
+    pub fn auth_enabled(&self) -> bool {
+        self.config.enabled
+    }
+
+    pub async fn authenticate_token(
+        &self,
+        token: &str,
+        svc: &UserService,
+        provisioning: &ProvisioningPolicy,
+    ) -> Result<AuthUser, AuthFailure> {
+        let jwks = self.get_jwks().await.map_err(|_| {
+            AuthFailure::Unauthorized("Failed to retrieve JWKS for token validation".to_owned())
+        })?;
+
+        let claims = self
+            .validate_token(token, &jwks)
+            .map_err(|_| AuthFailure::Unauthorized("Invalid or expired JWT token".to_owned()))?;
+
+        let user_info = self.extract_user_info(&claims).map_err(|_| {
+            AuthFailure::Unauthorized("Failed to extract required claims from token".to_owned())
+        })?;
+
+        let user = svc.provision_user(&user_info, provisioning).await.map_err(|e| {
+            tracing::warn!("User lookup/creation failed: {e}");
+            AuthFailure::Forbidden(
+                "User provisioning failed — email may not be in allowed domains, or identity could not be resolved"
+                    .to_owned(),
+            )
+        })?;
+
+        Ok(AuthUser {
+            user_id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            role: user.role,
+            sub: claims.sub,
+        })
     }
 
     async fn get_jwks(&self) -> Result<Vec<JwkKey>, StatusCode> {
@@ -270,7 +315,7 @@ pub async fn oidc_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    if !state.oidc.config.enabled {
+    if !state.oidc.auth_enabled() {
         return Ok(next.run(req).await);
     }
 
@@ -285,40 +330,20 @@ pub async fn oidc_middleware(
             ))
         })?;
 
-    let jwks = state.oidc.get_jwks().await.map_err(|_| {
-        Response::from(ProblemResponse::unauthorized(
-            "Failed to retrieve JWKS for token validation",
-        ))
-    })?;
-
-    let claims = state.oidc.validate_token(token, &jwks).map_err(|_| {
-        Response::from(ProblemResponse::unauthorized(
-            "Invalid or expired JWT token",
-        ))
-    })?;
-
-    let user_info = state.oidc.extract_user_info(&claims).map_err(|_| {
-        Response::from(ProblemResponse::unauthorized(
-            "Failed to extract required claims from token",
-        ))
-    })?;
-
-    let user = state
-        .svc
-        .provision_user(&user_info, &state.provisioning)
+    let auth_user = state
+        .oidc
+        .authenticate_token(token, state.svc.as_ref(), &state.provisioning)
         .await
-        .map_err(|e| {
-            tracing::warn!("User lookup/creation failed: {e}");
-            Response::from(ProblemResponse::forbidden("User provisioning failed — email may not be in allowed domains, or identity could not be resolved"))
-        })?;
+        .map_err(auth_failure_to_response)?;
 
-    req.extensions_mut().insert(AuthUser {
-        user_id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        role: user.role,
-        sub: claims.sub,
-    });
+    req.extensions_mut().insert(auth_user);
 
     Ok(next.run(req).await)
+}
+
+fn auth_failure_to_response(error: AuthFailure) -> Response {
+    match error {
+        AuthFailure::Unauthorized(detail) => Response::from(ProblemResponse::unauthorized(detail)),
+        AuthFailure::Forbidden(detail) => Response::from(ProblemResponse::forbidden(detail)),
+    }
 }

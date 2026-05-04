@@ -1,5 +1,6 @@
 use axum::middleware as axum_middleware;
 use axum::{Router, routing::get};
+use axum_prometheus::PrometheusMetricLayer;
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,10 +15,12 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use config::AppConfig;
+use server::grpc;
 use server::handlers::{health, users};
 use server::middleware::oidc::oidc_middleware;
 use server::middleware::{AppState, OidcValidator};
 use server::openapi::ApiDoc;
+use server::telemetry::init_tracing;
 
 #[derive(Parser)]
 #[command(name = "server")]
@@ -65,7 +68,10 @@ async fn main() {
         }
     };
 
-    init_tracing(&config);
+    let telemetry = init_tracing(&config).unwrap_or_else(|e| {
+        eprintln!("Failed to initialize observability: {e}");
+        std::process::exit(1);
+    });
 
     tracing::info!("Starting server...");
 
@@ -74,7 +80,8 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let repo = connect_to_database(&config).await;
+    let rest_repo = connect_to_database(&config).await;
+    let grpc_repo = connect_to_database(&config).await;
 
     let rest_addr = config.rest_addr().unwrap_or_else(|e| {
         tracing::error!("Invalid REST address: {e}");
@@ -88,7 +95,7 @@ async fn main() {
     let config_clone = config.clone();
     let rest_handle = tokio::spawn(async move {
         tracing::info!("REST server listening on {}", rest_addr);
-        if let Err(e) = serve_rest(config_clone, repo, rest_addr).await {
+        if let Err(e) = serve_rest(config_clone, rest_repo, rest_addr).await {
             tracing::error!("REST server error: {e}");
         }
     });
@@ -96,7 +103,7 @@ async fn main() {
     let config_clone2 = config.clone();
     let grpc_handle = tokio::spawn(async move {
         tracing::info!("gRPC server listening on {}", grpc_addr);
-        if let Err(e) = serve_grpc(config_clone2, grpc_addr).await {
+        if let Err(e) = grpc::serve(config_clone2, grpc_repo, grpc_addr).await {
             tracing::error!("gRPC server error: {e}");
         }
     });
@@ -125,25 +132,9 @@ async fn main() {
         tracing::warn!("Shutdown timeout reached (rest_ok={rest_done}, grpc_ok={grpc_done})");
     }
 
+    telemetry.shutdown();
+
     tracing::info!("Goodbye.");
-}
-
-fn init_tracing(config: &AppConfig) {
-    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.observability.log_level));
-
-    let registry = tracing_subscriber::registry().with(env_filter);
-
-    match config.observability.log_format {
-        config::LogFormat::Json => {
-            registry.with(fmt::layer().json()).try_init().ok();
-        }
-        config::LogFormat::Pretty => {
-            registry.with(fmt::layer().pretty()).try_init().ok();
-        }
-    }
 }
 
 async fn connect_to_database(config: &AppConfig) -> Box<dyn repo::UserRepo> {
@@ -256,6 +247,24 @@ async fn serve_rest(
                 .into_inner(),
         );
 
+    let app = if config.observability.metrics_enabled {
+        let (metrics_layer, metrics_handle) = PrometheusMetricLayer::pair();
+
+        app.route(
+            "/metrics",
+            get({
+                let metrics_handle = metrics_handle.clone();
+                move || {
+                    let metrics_handle = metrics_handle.clone();
+                    async move { metrics_handle.render() }
+                }
+            }),
+        )
+        .layer(metrics_layer)
+    } else {
+        app
+    };
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async {
@@ -264,73 +273,4 @@ async fn serve_rest(
         .await?;
 
     Ok(())
-}
-
-async fn serve_grpc(
-    _config: AppConfig,
-    addr: std::net::SocketAddr,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter
-        .set_serving::<proto::greetings::v1::greetings_service_server::GreetingsServiceServer<
-            GreetingsServiceImpl,
-        >>()
-        .await;
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    tonic::transport::Server::builder()
-        .add_service(health_service)
-        .add_service(
-            proto::greetings::v1::greetings_service_server::GreetingsServiceServer::new(
-                GreetingsServiceImpl,
-            ),
-        )
-        .serve_with_incoming_shutdown(
-            tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async {
-                tokio::signal::ctrl_c().await.ok();
-                tracing::info!("gRPC server graceful shutdown");
-            },
-        )
-        .await?;
-
-    Ok(())
-}
-
-mod proto {
-    pub mod greetings {
-        pub mod v1 {
-            tonic::include_proto!("greetings.v1");
-        }
-    }
-}
-
-use proto::greetings::v1::{
-    HealthCheckRequest, HealthCheckResponse, SayHelloRequest, SayHelloResponse,
-    greetings_service_server::GreetingsService,
-};
-
-pub struct GreetingsServiceImpl;
-
-#[tonic::async_trait]
-impl GreetingsService for GreetingsServiceImpl {
-    async fn say_hello(
-        &self,
-        request: tonic::Request<SayHelloRequest>,
-    ) -> Result<tonic::Response<SayHelloResponse>, tonic::Status> {
-        let name = request.into_inner().name;
-        Ok(tonic::Response::new(SayHelloResponse {
-            message: format!("Hello, {}!", name),
-        }))
-    }
-
-    async fn health_check(
-        &self,
-        _request: tonic::Request<HealthCheckRequest>,
-    ) -> Result<tonic::Response<HealthCheckResponse>, tonic::Status> {
-        Ok(tonic::Response::new(HealthCheckResponse {
-            status: "SERVING".to_owned(),
-        }))
-    }
 }

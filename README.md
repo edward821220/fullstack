@@ -2,7 +2,7 @@
 
 Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum + tonic). Frontend: TypeScript (Next.js + Tailwind).
 
-> **Status**: Authenticated skeleton with OIDC + MSSQL/Postgres support. RBAC enforced on user endpoints. OTLP and production hardening are planned but not yet implemented.
+> **Status**: Template candidate with OIDC, REST, gRPC, Prometheus metrics, OTLP export, and a reusable protected frontend slice.
 
 ## Tech Stack
 
@@ -14,10 +14,10 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 | Database (alternative) | PostgreSQL (sqlx) |
 | Migrations | refinery (MS SQL + PostgreSQL) |
 | Error Handling | SNAFU |
-| Observability | tracing (OTLP planned) |
+| Observability | tracing, OTLP exporter, Prometheus `/metrics` |
 | Auth | Generic OIDC (Dex, Keycloak, Azure AD, Google, Bank SSO) |
 | Authorization | Hierarchical RBAC enforced on user endpoints (Admin > Manager > User). Admin: create/delete; Manager+: list/get/update. Auth-disabled mode passes through. Fine-grained ACLs should be added per project. |
-| Frontend | TypeScript, Next.js (App Router) — minimal authenticated shell |
+| Frontend | TypeScript, Next.js (App Router) — protected dashboard slice |
 | Styling | Tailwind CSS v4, shadcn/ui |
 | Validation | Zod |
 | State | Zustand + SWR |
@@ -34,6 +34,8 @@ lefthook install
 ```
 
 ## Quick Start
+
+`docker-compose.yml` in this repository is for local development only.
 
 ### 1. Start Database
 
@@ -88,6 +90,7 @@ mise run check:be check:fe
 | `http://localhost:3001/docs` | API docs (Scalar) |
 | `http://localhost:3001/health` | Liveness |
 | `http://localhost:3001/health/ready` | Readiness (DB check) |
+| `http://localhost:3001/metrics` | Prometheus metrics |
 | `grpc://localhost:50051` | gRPC |
 
 ## Configuration
@@ -99,9 +102,17 @@ Override via `config/local.yaml` (gitignored) or `APP_*` env vars:
 ```bash
 APP_SERVER__PORT=3002
 APP_DATABASE__DATABASE_URL="postgres://user:pass@localhost:5432/db"
+APP_OBSERVABILITY__OTLP__ENABLED=true
+APP_OBSERVABILITY__OTLP__ENDPOINT="http://localhost:4318/v1/traces"
 ```
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.database_url` to a `postgres://` connection string.
+
+Bootstrap a local override from the checked-in example:
+
+```bash
+cp backend/config/local.example.yaml backend/config/local.yaml
+```
 
 ### Auth Setup
 
@@ -117,6 +128,18 @@ Enable auth: set `auth.enabled: true` in `backend/config/default.yaml` (disabled
 
 Dex config and client credentials are pre-defined in `docker/dex/config.yaml`. No manual setup needed.
 
+For bank / enterprise onboarding, keep the frontend and backend aligned like this:
+
+1. Set `AUTH_OIDC_ID`, `AUTH_OIDC_SECRET`, and `AUTH_OIDC_ISSUER` in `frontend/.env.local`
+2. Enable backend auth in `backend/config/local.yaml` or `APP_AUTH__ENABLED=true`
+3. Choose backend `auth.discovery_mode`
+   - `discovery` when the IdP exposes `.well-known/openid-configuration`
+   - `manual` when the bank IdP requires explicit JWKS / issuer / token endpoints
+4. Map roles from the correct claim source via `auth.role_claim_source` (`roles` or `groups`)
+5. Turn on OTLP export when the project has a collector:
+   - `observability.otlp.enabled: true`
+   - `observability.otlp.endpoint: http://collector:4318/v1/traces`
+
 OIDC provider via frontend env vars (see `frontend/.env.example`):
 
 | Variable | Description |
@@ -129,7 +152,7 @@ OIDC provider via frontend env vars (see `frontend/.env.example`):
 
 For bank on-prem IdPs with self-signed certificates:
 ```yaml
-# backend/config/default.yaml
+# backend/config/local.yaml
 auth:
   discovery_mode: "manual"
   manual_endpoints:
@@ -137,6 +160,16 @@ auth:
     issuer: "https://idp.bank.com"
   danger_accept_invalid_certs: true
 ```
+
+### gRPC Template
+
+The backend now ships a reusable `users.v1.UsersService` gRPC contract:
+
+- `GetUser`
+- `ListUsers`
+- `HealthCheck`
+
+The service is backed by the same `svc::UserService` used by REST and reuses the same OIDC validation + RBAC rules.
 
 ## Architecture
 
@@ -146,8 +179,8 @@ See [AGENTS.md](./AGENTS.md) for detailed architecture and development conventio
 
 This template provides an authenticated skeleton. The following areas are intentionally minimal:
 
-- **Frontend**: Minimal authenticated shell (login → dashboard → sign out). Business UI patterns (loading/empty/error states, data tables, forms) should be added per project.
-- **gRPC**: Placeholder `SayHello`/`HealthCheck` endpoints. Demonstrates tonic integration pattern but not a production service.
+- **Frontend**: One complete protected dashboard slice is included, but domain-specific forms, workflows, and authorization-aware navigation should still be added per project.
+- **gRPC**: `users.v1.UsersService` demonstrates the template pattern, but project-specific protobuf packages, richer error semantics, and cross-service contracts should still be expanded.
 - **Authorization**: Hierarchical role-based guard (Admin > Manager > User) is provided. Fine-grained permissions, resource-level ACLs, or ABAC should be implemented per project.
 - **OIDC**: Backend supports both discovery and manual endpoint modes (for enterprise IdPs with self-signed certs). Frontend uses standard OIDC discovery only — for non-standard IdPs, customize `frontend/src/lib/auth/config.ts`.
-- **Observability**: Tracing with request IDs is wired. OTLP export is planned but not implemented.
+- **Observability**: Prometheus metrics and OTLP trace export are wired, but collector topology, dashboards, alerts, and retention remain project-level work.

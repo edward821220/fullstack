@@ -6,7 +6,7 @@ import type {
   User,
   CreateUserRequest,
   UpdateUserRequest,
-  PaginatedUsersResponse,
+  PaginatedUserResponse,
   ErrorResponse,
 } from "@/lib/api/types";
 
@@ -43,8 +43,8 @@ describe("API types — generated from OpenAPI spec", () => {
     expect(withoutName.display_name).toBeUndefined();
   });
 
-  it("PaginatedUsersResponse should include data array and pagination fields", () => {
-    const page: PaginatedUsersResponse = {
+  it("PaginatedUserResponse should include data array and pagination fields", () => {
+    const page: PaginatedUserResponse = {
       data: [],
       total: 0,
       page: 1,

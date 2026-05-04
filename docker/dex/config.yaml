@@ -24,8 +24,9 @@ staticClients:
 enablePasswordDB: true
 
 staticPasswords:
+  # Password: "admin"
   - email: "admin@localhost"
-    hash: "$2y$10$sxfXzWNUO2cW5XwzIXfeg.cHbhGBjE1XczdZuTyTkiYVELX8.zSHm"
+    hash: "$2y$10$iJN8rFqR3MGSjxySnxQCT.81DugCCAqIT6q/gK6NOeOgf6f.oj8jC"
     username: "admin"
     userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
     name: "Admin User"
@@ -34,8 +35,9 @@ staticPasswords:
     groups:
       - "admin"
 
+  # Password: "manager"
   - email: "manager@localhost"
-    hash: "$2y$10$tRAVmoaksd.JfWsoyrUUo.259i3lI05v0H7U.uk7V7FjM0qkb4Zdi"
+    hash: "$2y$10$m0gYFct1qRWqQ7t/kKpBY.M9/HeUW8CK2hKCOEtVKU4g1mIRbB5qe"
     username: "manager"
     userID: "41331323-6f44-45e6-b3b9-2c4b60c02be5"
     name: "Manager User"
@@ -44,8 +46,9 @@ staticPasswords:
     groups:
       - "manager"
 
+  # Password: "user"
   - email: "user@localhost"
-    hash: "$2y$10$Z80ylod7hMFGE3Z.Z66Cu.NmbDwwKXMiCZ2GbyjRRjBHDKK40gzVS"
+    hash: "$2y$10$XpvbNVbhwjCKUR6nd6tfjOCbgj.kIy/QhbI46mFkLxw38uIVKh1bu"
     username: "user"
     userID: "c12b4e80-a5d3-4f18-b9cb-a2e5e6f7c8d9"
     name: "Regular User"

@@ -35,6 +35,12 @@ observability:
   log_format: "pretty"
   log_level: "info"
   service_name: "fullstack-template"
+  metrics_enabled: true
+  otlp:
+    enabled: false
+    endpoint: "http://localhost:4318/v1/traces"
+    protocol: "http"
+    timeout_seconds: 5
 
 grpc:
   host: "0.0.0.0"

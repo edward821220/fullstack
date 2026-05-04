@@ -6,6 +6,14 @@ use serde::Deserialize;
 use snafu::Snafu;
 use std::net::SocketAddr;
 
+fn default_metrics_enabled() -> bool {
+    true
+}
+
+fn default_otlp_timeout_seconds() -> u64 {
+    5
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Configuration error: {source}"))]
@@ -160,6 +168,41 @@ pub struct ObservabilityConfig {
     pub log_format: LogFormat,
     pub log_level: String,
     pub service_name: String,
+    #[serde(default = "default_metrics_enabled")]
+    pub metrics_enabled: bool,
+    #[serde(default)]
+    pub otlp: OtlpConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum OtlpProtocol {
+    Grpc,
+    #[default]
+    Http,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OtlpConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub protocol: OtlpProtocol,
+    #[serde(default = "default_otlp_timeout_seconds")]
+    pub timeout_seconds: u64,
+}
+
+impl Default for OtlpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            protocol: OtlpProtocol::default(),
+            timeout_seconds: default_otlp_timeout_seconds(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -208,6 +251,25 @@ impl AppConfig {
             });
         }
 
+        if self.observability.service_name.trim().is_empty() {
+            return Err(Error::Invalid {
+                message: "observability.service_name must be set".to_owned(),
+            });
+        }
+
+        if self.observability.otlp.enabled && self.observability.otlp.endpoint.trim().is_empty() {
+            return Err(Error::Invalid {
+                message: "observability.otlp.endpoint must be set when OTLP export is enabled"
+                    .to_owned(),
+            });
+        }
+
+        if self.observability.otlp.timeout_seconds == 0 {
+            return Err(Error::Invalid {
+                message: "observability.otlp.timeout_seconds must be greater than 0".to_owned(),
+            });
+        }
+
         Ok(())
     }
 
@@ -231,5 +293,81 @@ impl AppConfig {
                     self.grpc.host, self.grpc.port, e
                 ),
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_config() -> AppConfig {
+        AppConfig {
+            server: ServerConfig {
+                host: "127.0.0.1".to_owned(),
+                port: 3001,
+                timeout_seconds: 30,
+                shutdown_timeout_seconds: 30,
+                cors_origins: vec!["http://localhost:3000".to_owned()],
+            },
+            database: DatabaseConfig {
+                driver: DatabaseDriver::Mssql,
+                database_url: "mssql://sa:Password!123@localhost:1433/fullstack_template"
+                    .to_owned(),
+                max_connections: 10,
+                connect_retry_attempts: 3,
+                connect_retry_delay_ms: 100,
+                encrypt: false,
+            },
+            auth: AuthConfig {
+                enabled: false,
+                issuer_url: "http://localhost:8080/dex".to_owned(),
+                audience: vec!["fullstack-template".to_owned()],
+                jwks_cache_duration_secs: 3600,
+                allowed_email_domains: vec![],
+                role_claim_source: RoleClaimSource::Groups,
+                discovery_mode: DiscoveryMode::Discovery,
+                manual_endpoints: None,
+                danger_accept_invalid_certs: false,
+            },
+            observability: ObservabilityConfig {
+                log_format: LogFormat::Pretty,
+                log_level: "info".to_owned(),
+                service_name: "fullstack-template".to_owned(),
+                metrics_enabled: true,
+                otlp: OtlpConfig::default(),
+            },
+            grpc: GrpcConfig {
+                host: "127.0.0.1".to_owned(),
+                port: 50051,
+            },
+        }
+    }
+
+    #[test]
+    fn validate_should_accept_default_observability_configuration() {
+        let config = make_config();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_should_reject_empty_service_name() {
+        let mut config = make_config();
+        config.observability.service_name = String::new();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_require_otlp_endpoint_when_enabled() {
+        let mut config = make_config();
+        config.observability.otlp.enabled = true;
+        config.observability.otlp.endpoint = String::new();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_reject_zero_otlp_timeout() {
+        let mut config = make_config();
+        config.observability.otlp.timeout_seconds = 0;
+        assert!(config.validate().is_err());
     }
 }

@@ -35,11 +35,27 @@ impl Role {
     }
 }
 
-fn has_permission(user_role: &Role, required_role: &Role) -> bool {
+pub fn has_permission(user_role: &Role, required_role: &Role) -> bool {
     matches!(
         (user_role, required_role),
         (Role::Admin, _) | (Role::Manager, Role::Manager | Role::User) | (Role::User, Role::User)
     )
+}
+
+pub fn authorize_role(role: &str, minimum_role: &Role) -> Result<(), String> {
+    let user_role = Role::from_str(role).map_err(|_| {
+        format!("The role '{role}' assigned to your identity is not recognized by this system")
+    })?;
+
+    if has_permission(&user_role, minimum_role) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Role '{}' is not authorized for this operation (requires '{}' or higher)",
+            user_role.as_str(),
+            minimum_role.as_str()
+        ))
+    }
 }
 
 async fn enforce_role(minimum_role: Role, req: Request, next: Next) -> Result<Response, Response> {
@@ -48,26 +64,14 @@ async fn enforce_role(minimum_role: Role, req: Request, next: Next) -> Result<Re
     match auth_user {
         None => Ok(next.run(req).await),
         Some(user) => {
-            let user_role = Role::from_str(&user.role).map_err(|_| {
-                tracing::warn!(role = %user.role, "Unknown user role");
-                Response::from(ProblemResponse::forbidden(format!(
-                    "The role '{}' assigned to your identity is not recognized by this system",
-                    user.role
-                )))
-            })?;
-
-            if !has_permission(&user_role, &minimum_role) {
+            if let Err(detail) = authorize_role(&user.role, &minimum_role) {
                 tracing::warn!(
                     user_id = %user.user_id,
-                    user_role = %user_role.as_str(),
+                    user_role = %user.role,
                     minimum_role = %minimum_role.as_str(),
                     "Authorization denied"
                 );
-                return Err(Response::from(ProblemResponse::forbidden(format!(
-                    "Role '{}' is not authorized for this operation (requires '{}' or higher)",
-                    user_role.as_str(),
-                    minimum_role.as_str()
-                ))));
+                return Err(Response::from(ProblemResponse::forbidden(detail)));
             }
 
             Ok(next.run(req).await)

@@ -72,7 +72,7 @@ project-root/
 ### Error Handling
 - Return `Result<T, E>` — never `unwrap()`/`expect()` outside tests.
 - Use `?` operator. No manual match chains for error propagation.
-- Use `thiserror` for libs, `anyhow` for binaries only.
+- Use `snafu` for per-layer error enums (`#[derive(Snafu)]` + context selectors).
 - Do not silently swallow errors with `if let Err(_) =`.
 
 ### Performance

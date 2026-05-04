@@ -37,3 +37,17 @@ run = [
   "pnpm build",
   "pnpm test",
 ]
+
+[tasks."openapi:gen:be"]
+description = "Generate OpenAPI JSON spec from backend"
+dir = "backend"
+run = "cargo run -p server -- gen-openapi > openapi.json"
+
+[tasks."openapi:gen:fe"]
+description = "Convert OpenAPI JSON to TypeScript types"
+dir = "frontend"
+run = "pnpm openapi:gen"
+
+[tasks."openapi:gen"]
+description = "Generate OpenAPI spec from backend and convert to TypeScript types"
+run = ["mise run openapi:gen:be", "mise run openapi:gen:fe"]
