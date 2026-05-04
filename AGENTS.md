@@ -35,7 +35,6 @@ project-root/
 │       └── styles/           # Tailwind CSS globals
 ├── proto/                    # gRPC protobuf definitions (language-agnostic)
 ├── docker/                   # Dockerfiles
-├── k8s/helm/                 # Helm chart
 └── docker-compose.yml        # Local dev environment
 ```
 
@@ -145,10 +144,12 @@ Separate groups with blank lines.
 **CRITICAL**: Before reporting task completion, always run:
 
 ```bash
-mise run check
+mise run check:be check:fe
 ```
 
-This runs: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo check`, `cargo test`, `pnpm format:check`, `eslint`, `tsc --noEmit`, `pnpm build`, `vitest`.
+This runs the full backend and frontend verification flow via `mise`: Rust/TypeScript format checks, linting, spell check, compile/build validation, and automated tests.
+
+`lefthook` `pre-commit` is intentionally lighter: format/lint/spell-check only. There is no `pre-push` hook by default; full verification belongs in CI and in the final agent validation step above.
 
 ## Sensitive Data Policy
 

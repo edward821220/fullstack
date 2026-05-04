@@ -3,29 +3,21 @@ on:
   push:
     paths:
       - "frontend/**"
+      - "mise.toml"
       - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
+      - "mise.toml"
       - ".github/workflows/frontend.yml"
 
 jobs:
   check:
-    name: Lint, Format, Typecheck & Test
+    name: Full frontend check
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: jdx/mise-action@v4
         with:
-          node-version: "24"
-          cache: "pnpm"
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm build
-      - run: pnpm test
+          cache: true
+      - run: mise run check:fe

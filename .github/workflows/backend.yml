@@ -4,11 +4,13 @@ on:
     paths:
       - "backend/**"
       - "proto/**"
+      - "mise.toml"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
       - "proto/**"
+      - "mise.toml"
       - ".github/workflows/backend.yml"
 
 env:
@@ -16,44 +18,12 @@ env:
 
 jobs:
   check:
-    name: Lint, Format, Typecheck & Test
+    name: Full backend check
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4
         with:
-          components: clippy, rustfmt
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo check --all-targets --all-features
-      - run: cargo test --workspace
+          cache: true
+      - run: mise run check:be
 
-  cargo-deny:
-    name: License & Advisory Audit
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check all
-
-  spellcheck:
-    name: Spell Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: crate-ci/typos@v2

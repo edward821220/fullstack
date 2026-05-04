@@ -9,7 +9,7 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 | Layer | Technology |
 |-------|-----------|
 | Backend API | Rust, Axum |
-| Backend gRPC | Rust, tonic (experimental — placeholder endpoints) |
+| Backend gRPC | Rust, tonic |
 | Database (default) | MS SQL Server |
 | Database (alternative) | PostgreSQL (sqlx) |
 | Migrations | refinery (MS SQL + PostgreSQL) |
@@ -28,7 +28,8 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 Install [mise](https://mise.jdx.dev), then:
 
 ```bash
-mise install   # Rust 1.90, Node 24, pnpm 10
+mise install   # Rust 1.90, Node 24, pnpm 10, lefthook, typos
+mise exec -- lefthook install
 ```
 
 ## Quick Start
@@ -47,10 +48,11 @@ docker compose up -d
 
 ```bash
 # Backend (http://localhost:3001, gRPC :50051)
-mise run dev-backend
+mise run dev:be
 
 # Frontend — first run needs pnpm install
-cd frontend && pnpm install && mise run dev-frontend
+pnpm -C frontend install
+mise run dev:fe
 ```
 
 ### 3. (Optional) Full Stack with Dex OIDC
@@ -70,8 +72,10 @@ cp frontend/.env.example frontend/.env.local
 ### 5. Run Checks
 
 ```bash
-mise run check
+mise run check:be check:fe
 ```
+
+`pre-commit` runs a lighter `lefthook` gate: formatter, linter, and spell check only. Full compile/build/test verification stays in CI and in the final local check above.
 
 ## Endpoints
 
