@@ -80,5 +80,5 @@ async-trait = "0.1"
 url = "2"
 
 # Dev-only: integration tests
-testcontainers = "0.23"
+testcontainers = "0.24"
 testcontainers-modules = { version = "0.11", features = ["postgres", "mssql_server"] }
