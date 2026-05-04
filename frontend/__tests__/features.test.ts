@@ -163,4 +163,46 @@ describe("Auth config", () => {
     expect(opts.callbacks?.jwt).toBeDefined();
     expect(opts.callbacks?.session).toBeDefined();
   });
+
+  it("should have signOut page configured as /login", () => {
+    expect(authOptions.pages?.signOut).toBe("/login");
+  });
+
+  it("OIDC provider should request offline_access scope for refresh tokens", () => {
+    const provider = authOptions.providers[0];
+    const p = provider as { authorization?: { params?: { scope?: string } } };
+    expect(p.authorization?.params?.scope).toContain("offline_access");
+  });
+
+  it("session maxAge should be configured", () => {
+    const opts = authOptions as { session?: { maxAge?: number } };
+    expect(opts.session?.maxAge).toBe(24 * 60 * 60);
+  });
+});
+
+// ── Auth types tests ─────────────────────────────────────────────────────────
+
+import type { Session } from "next-auth";
+
+describe("Auth session types", () => {
+  it("Session should support accessToken and error fields", () => {
+    const session: Session = {
+      user: { name: "Test", email: "test@example.com" },
+      expires: new Date().toISOString(),
+      accessToken: "abc.def.ghi",
+      error: "RefreshAccessTokenError",
+    };
+    expect(session.accessToken).toBe("abc.def.ghi");
+    expect(session.error).toBe("RefreshAccessTokenError");
+  });
+
+  it("Session should be valid without error", () => {
+    const session: Session = {
+      user: { name: "Test", email: "test@example.com" },
+      expires: new Date().toISOString(),
+      accessToken: "abc.def.ghi",
+    };
+    expect(session.accessToken).toBeDefined();
+    expect(session.error).toBeUndefined();
+  });
 });

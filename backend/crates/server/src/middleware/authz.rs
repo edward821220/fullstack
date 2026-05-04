@@ -1,9 +1,26 @@
 use std::str::FromStr;
 
-use axum::{extract::Request, middleware::Next, response::Response};
+use axum::{
+    extract::Request,
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
 
 use super::oidc::AuthUser;
+use crate::audit::{AuditEvent, log_audit_event};
 use crate::problem::ProblemResponse;
+
+#[derive(Debug, Clone)]
+pub enum AuthzError {
+    Forbidden(String),
+}
+
+impl IntoResponse for AuthzError {
+    fn into_response(self) -> Response {
+        let AuthzError::Forbidden(detail) = self;
+        ProblemResponse::forbidden(detail).into_response()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Role {
@@ -42,36 +59,47 @@ pub fn has_permission(user_role: &Role, required_role: &Role) -> bool {
     )
 }
 
-pub fn authorize_role(role: &str, minimum_role: &Role) -> Result<(), String> {
+pub fn authorize_role(role: &str, minimum_role: &Role) -> Result<(), AuthzError> {
     let user_role = Role::from_str(role).map_err(|_| {
-        format!("The role '{role}' assigned to your identity is not recognized by this system")
+        AuthzError::Forbidden(format!(
+            "The role '{role}' assigned to your identity is not recognized by this system"
+        ))
     })?;
 
     if has_permission(&user_role, minimum_role) {
         Ok(())
     } else {
-        Err(format!(
+        Err(AuthzError::Forbidden(format!(
             "Role '{}' is not authorized for this operation (requires '{}' or higher)",
             user_role.as_str(),
             minimum_role.as_str()
-        ))
+        )))
     }
 }
 
-async fn enforce_role(minimum_role: Role, req: Request, next: Next) -> Result<Response, Response> {
+async fn enforce_role(
+    minimum_role: Role,
+    req: Request,
+    next: Next,
+) -> Result<Response, AuthzError> {
     let auth_user = req.extensions().get::<AuthUser>();
 
     match auth_user {
         None => Ok(next.run(req).await),
         Some(user) => {
-            if let Err(detail) = authorize_role(&user.role, &minimum_role) {
+            if let Err(e) = authorize_role(&user.role, &minimum_role) {
                 tracing::warn!(
                     user_id = %user.user_id,
                     user_role = %user.role,
                     minimum_role = %minimum_role.as_str(),
                     "Authorization denied"
                 );
-                return Err(Response::from(ProblemResponse::forbidden(detail)));
+                log_audit_event(&AuditEvent::RoleDenied {
+                    user_id: user.user_id,
+                    required_role: minimum_role.as_str().to_owned(),
+                    actual_role: user.role.clone(),
+                });
+                return Err(e);
             }
 
             Ok(next.run(req).await)
@@ -79,15 +107,15 @@ async fn enforce_role(minimum_role: Role, req: Request, next: Next) -> Result<Re
     }
 }
 
-pub async fn require_admin(req: Request, next: Next) -> Result<Response, Response> {
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, AuthzError> {
     enforce_role(Role::Admin, req, next).await
 }
 
-pub async fn require_manager(req: Request, next: Next) -> Result<Response, Response> {
+pub async fn require_manager(req: Request, next: Next) -> Result<Response, AuthzError> {
     enforce_role(Role::Manager, req, next).await
 }
 
-pub async fn require_user(req: Request, next: Next) -> Result<Response, Response> {
+pub async fn require_user(req: Request, next: Next) -> Result<Response, AuthzError> {
     enforce_role(Role::User, req, next).await
 }
 

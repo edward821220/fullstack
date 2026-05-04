@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{Json, response::Response};
-use dto::HealthResponse;
+use dto::{ErrorResponse, HealthResponse};
 use svc::{UserService, UserServiceTrait};
 
 use crate::problem::ProblemResponse;
@@ -21,6 +21,15 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/health/ready",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is ready (database reachable)", body = HealthResponse),
+        (status = 503, description = "Database health check failed", body = ErrorResponse),
+    )
+)]
 pub async fn health_ready(svc: Arc<UserService>) -> Result<Json<HealthResponse>, Response> {
     match svc.health_check().await {
         Ok(_) => Ok(Json(HealthResponse {

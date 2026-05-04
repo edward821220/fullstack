@@ -3,15 +3,15 @@ use std::time::{Duration, Instant};
 
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
 use openidconnect::{IssuerUrl, core::CoreProviderMetadata};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use crate::audit::{AuditEvent, log_audit_event};
 use crate::problem::ProblemResponse;
 use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
@@ -20,6 +20,28 @@ use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
 pub enum AuthFailure {
     Unauthorized(String),
     Forbidden(String),
+    Internal(String),
+}
+
+impl std::fmt::Display for AuthFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthFailure::Unauthorized(detail) => write!(f, "Unauthorized: {detail}"),
+            AuthFailure::Forbidden(detail) => write!(f, "Forbidden: {detail}"),
+            AuthFailure::Internal(detail) => write!(f, "Internal: {detail}"),
+        }
+    }
+}
+
+impl IntoResponse for AuthFailure {
+    fn into_response(self) -> Response {
+        let response = match self {
+            AuthFailure::Unauthorized(detail) => ProblemResponse::unauthorized(detail),
+            AuthFailure::Forbidden(detail) => ProblemResponse::forbidden(detail),
+            AuthFailure::Internal(detail) => ProblemResponse::internal_error(detail),
+        };
+        response.into_response()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -109,16 +131,16 @@ impl OidcValidator {
         svc: &UserService,
         provisioning: &ProvisioningPolicy,
     ) -> Result<AuthUser, AuthFailure> {
-        let jwks = self.get_jwks().await.map_err(|_| {
-            AuthFailure::Unauthorized("Failed to retrieve JWKS for token validation".to_owned())
+        let jwks = self.get_jwks().await.map_err(|e| {
+            AuthFailure::Unauthorized(format!("Failed to retrieve JWKS for token validation: {e}"))
         })?;
 
         let claims = self
             .validate_token(token, &jwks)
-            .map_err(|_| AuthFailure::Unauthorized("Invalid or expired JWT token".to_owned()))?;
+            .map_err(|e| AuthFailure::Unauthorized(format!("Invalid or expired JWT token: {e}")))?;
 
-        let user_info = self.extract_user_info(&claims).map_err(|_| {
-            AuthFailure::Unauthorized("Failed to extract required claims from token".to_owned())
+        let user_info = self.extract_user_info(&claims).map_err(|e| {
+            AuthFailure::Unauthorized(format!("Failed to extract required claims from token: {e}"))
         })?;
 
         let user = svc.provision_user(&user_info, provisioning).await.map_err(|e| {
@@ -138,7 +160,9 @@ impl OidcValidator {
         })
     }
 
-    async fn get_jwks(&self) -> Result<Vec<JwkKey>, StatusCode> {
+    // --- internal helpers ---
+
+    async fn get_jwks(&self) -> Result<Vec<JwkKey>, AuthFailure> {
         let cache_ttl = Duration::from_secs(self.config.jwks_cache_duration_secs);
         {
             let cache = self.jwks_cache.lock().await;
@@ -147,7 +171,10 @@ impl OidcValidator {
             }
         }
 
-        let jwks_uri = self.resolve_jwks_uri().await?;
+        let jwks_uri = self
+            .resolve_jwks_uri()
+            .await
+            .map_err(|e| AuthFailure::Internal(format!("Failed to resolve JWKS URI: {e}")))?;
         let response = self
             .http_client
             .get(&jwks_uri)
@@ -156,13 +183,13 @@ impl OidcValidator {
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to fetch JWKS: {e}");
-                StatusCode::UNAUTHORIZED
+                AuthFailure::Unauthorized(format!("Failed to fetch JWKS: {e}"))
             })?
             .json::<JwksResponse>()
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to parse JWKS response: {e}");
-                StatusCode::UNAUTHORIZED
+                AuthFailure::Internal(format!("Failed to parse JWKS response: {e}"))
             })?;
 
         let mut cache = self.jwks_cache.lock().await;
@@ -170,7 +197,7 @@ impl OidcValidator {
         Ok(response.keys)
     }
 
-    async fn discover_provider_metadata(&self) -> Result<CoreProviderMetadata, StatusCode> {
+    async fn discover_provider_metadata(&self) -> Result<CoreProviderMetadata, AuthFailure> {
         let cache_ttl = Duration::from_secs(self.config.jwks_cache_duration_secs);
         {
             let cache = self.metadata_cache.lock().await;
@@ -183,7 +210,7 @@ impl OidcValidator {
 
         let issuer_url = IssuerUrl::new(self.config.issuer_url.clone()).map_err(|e| {
             tracing::warn!("Invalid issuer URL: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
+            AuthFailure::Internal(format!("Invalid issuer URL: {e}"))
         })?;
 
         let discovery_url = format!(
@@ -199,13 +226,13 @@ impl OidcValidator {
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to fetch OIDC discovery: {e}");
-                StatusCode::UNAUTHORIZED
+                AuthFailure::Unauthorized(format!("Failed to fetch OIDC discovery: {e}"))
             })?
             .json::<CoreProviderMetadata>()
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to parse OIDC discovery: {e}");
-                StatusCode::UNAUTHORIZED
+                AuthFailure::Internal(format!("Failed to parse OIDC discovery: {e}"))
             })?;
 
         let mut cache = self.metadata_cache.lock().await;
@@ -214,14 +241,18 @@ impl OidcValidator {
         Ok(metadata)
     }
 
-    async fn resolve_jwks_uri(&self) -> Result<String, StatusCode> {
+    async fn resolve_jwks_uri(&self) -> Result<String, AuthFailure> {
         match self.config.discovery_mode {
             DiscoveryMode::Manual => self
                 .config
                 .manual_endpoints
                 .as_ref()
                 .map(|e| e.jwks_uri.clone())
-                .ok_or(StatusCode::INTERNAL_SERVER_ERROR),
+                .ok_or_else(|| {
+                    AuthFailure::Internal(
+                        "JWKS URI not configured for manual discovery mode".to_owned(),
+                    )
+                }),
             DiscoveryMode::Discovery => {
                 let metadata = self.discover_provider_metadata().await?;
                 Ok(metadata.jwks_uri().to_string())
@@ -229,25 +260,25 @@ impl OidcValidator {
         }
     }
 
-    fn validate_token(&self, token: &str, jwks: &[JwkKey]) -> Result<Claims, StatusCode> {
+    fn validate_token(&self, token: &str, jwks: &[JwkKey]) -> Result<Claims, AuthFailure> {
         let header = decode_header(token).map_err(|e| {
             tracing::warn!("Failed to decode JWT header: {e}");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Unauthorized(format!("Failed to decode JWT header: {e}"))
         })?;
 
-        let kid = header.kid.ok_or({
+        let kid = header.kid.ok_or_else(|| {
             tracing::warn!("JWT missing kid claim");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Unauthorized("JWT missing kid claim".to_owned())
         })?;
 
-        let jwk = jwks.iter().find(|k| k.kid == kid).ok_or({
+        let jwk = jwks.iter().find(|k| k.kid == kid).ok_or_else(|| {
             tracing::warn!("JWK with kid={kid} not found in JWKS");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Unauthorized(format!("JWK with kid={kid} not found in JWKS"))
         })?;
 
         let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|e| {
             tracing::warn!("Failed to construct decoding key: {e}");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Internal(format!("Failed to construct decoding key: {e}"))
         })?;
 
         let mut validation = Validation::new(header.alg);
@@ -257,7 +288,7 @@ impl OidcValidator {
 
         let token_data = decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
             tracing::warn!("JWT validation failed: {e}");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Unauthorized(format!("JWT validation failed: {e}"))
         })?;
 
         Ok(token_data.claims)
@@ -275,12 +306,12 @@ impl OidcValidator {
         }
     }
 
-    fn extract_user_info(&self, claims: &Claims) -> Result<OidcUserInfo, StatusCode> {
+    fn extract_user_info(&self, claims: &Claims) -> Result<OidcUserInfo, AuthFailure> {
         let roles = self.extract_roles(claims);
         let issuer = claims.iss.clone().unwrap_or_else(|| self.resolve_issuer());
         let email = claims.email.clone().ok_or_else(|| {
             tracing::warn!("JWT missing required email claim");
-            StatusCode::UNAUTHORIZED
+            AuthFailure::Unauthorized("JWT missing required email claim".to_owned())
         })?;
         Ok(OidcUserInfo {
             sub: claims.sub.clone(),
@@ -314,7 +345,7 @@ pub async fn oidc_middleware(
     State(state): State<Arc<AppState>>,
     mut req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, AuthFailure> {
     if !state.oidc.auth_enabled() {
         return Ok(next.run(req).await);
     }
@@ -325,25 +356,31 @@ pub async fn oidc_middleware(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| {
-            Response::from(ProblemResponse::unauthorized(
-                "Missing or invalid Bearer token",
-            ))
+            log_audit_event(&AuditEvent::AuthFailure {
+                reason: "Missing or invalid Bearer token".to_owned(),
+            });
+            AuthFailure::Unauthorized("Missing or invalid Bearer token".to_owned())
         })?;
 
     let auth_user = state
         .oidc
         .authenticate_token(token, state.svc.as_ref(), &state.provisioning)
         .await
-        .map_err(auth_failure_to_response)?;
+        .map_err(|e| {
+            log_audit_event(&AuditEvent::AuthFailure {
+                reason: format!("{e:?}"),
+            });
+            e
+        })?;
+
+    log_audit_event(&AuditEvent::AuthSuccess {
+        user_id: auth_user.user_id,
+        email: auth_user.email.clone(),
+        role: auth_user.role.clone(),
+        sub: auth_user.sub.clone(),
+    });
 
     req.extensions_mut().insert(auth_user);
 
     Ok(next.run(req).await)
-}
-
-fn auth_failure_to_response(error: AuthFailure) -> Response {
-    match error {
-        AuthFailure::Unauthorized(detail) => Response::from(ProblemResponse::unauthorized(detail)),
-        AuthFailure::Forbidden(detail) => Response::from(ProblemResponse::forbidden(detail)),
-    }
 }

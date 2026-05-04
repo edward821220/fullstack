@@ -3,7 +3,7 @@ import apiClient from "@/lib/api/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
-function parse<T>(data: unknown, schema: z.ZodSchema<T>): T {
+export function parse<T>(data: unknown, schema: z.ZodSchema<T>): T {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new Error(`API response validation failed: ${result.error.message}`);

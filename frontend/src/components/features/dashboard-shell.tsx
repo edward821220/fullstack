@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/app";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/app/dashboard/sign-out-button";
+import { AuthError } from "@/components/features/auth-error";
 
 const navigation = [
   { href: "#overview", label: "Overview" },
@@ -108,6 +109,7 @@ export function DashboardShell({
             </div>
           </header>
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8" id="dashboard-content">
+            <AuthError />
             {children}
           </main>
         </div>

@@ -178,7 +178,11 @@ async fn authenticate_request(
 
 fn require_role(user: Option<&AuthUser>, minimum_role: &Role) -> Result<(), Status> {
     if let Some(user) = user {
-        authorize_role(&user.role, minimum_role).map_err(Status::permission_denied)?;
+        authorize_role(&user.role, minimum_role).map_err(|e| match e {
+            crate::middleware::authz::AuthzError::Forbidden(detail) => {
+                Status::permission_denied(detail)
+            }
+        })?;
     }
 
     Ok(())
@@ -188,6 +192,7 @@ fn auth_failure_to_status(error: AuthFailure) -> Status {
     match error {
         AuthFailure::Unauthorized(detail) => Status::unauthenticated(detail),
         AuthFailure::Forbidden(detail) => Status::permission_denied(detail),
+        AuthFailure::Internal(detail) => Status::internal(detail),
     }
 }
 

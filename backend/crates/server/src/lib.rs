@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod grpc;
 pub mod handlers;
 pub mod middleware;

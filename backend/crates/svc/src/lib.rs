@@ -210,7 +210,18 @@ impl UserServiceTrait for UserService {
         let role = policy.resolve_role(&oidc_info.roles);
 
         let user = match existing_user {
-            Some(u) => u,
+            Some(u) => {
+                tracing::info!(
+                    email = %oidc_info.email,
+                    sub = %oidc_info.sub,
+                    issuer = %oidc_info.issuer,
+                    user_id = %u.id,
+                    "Linking existing user to OIDC identity and syncing attributes"
+                );
+                self.repo
+                    .sync_oidc_attributes(u.id, &oidc_info.name, &role, oidc_info.email_verified)
+                    .await?
+            }
             None => {
                 tracing::info!(
                     email = %oidc_info.email,
@@ -257,11 +268,256 @@ impl UserServiceTrait for UserService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use model::user_identity::UserIdentity;
+    use std::sync::{Arc, Mutex};
+    use time::OffsetDateTime;
 
     fn resolve_role_with_policy(roles: &[&str]) -> String {
         let policy = ProvisioningPolicy::new(vec![], "user".to_owned());
         let strings: Vec<String> = roles.iter().map(|s| s.to_string()).collect();
         policy.resolve_role(&strings)
+    }
+
+    fn test_user(
+        id: Uuid,
+        email: &str,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> User {
+        let now = OffsetDateTime::now_utc();
+        User {
+            id,
+            email: email.to_owned(),
+            display_name: display_name.to_owned(),
+            role: role.to_owned(),
+            email_verified,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    struct ProvisionTestLog {
+        sync_odc_calls: Mutex<Vec<(Uuid, String, String, bool)>>,
+        create_calls: Mutex<Vec<(String, String, String, bool)>>,
+        create_identity_calls: Mutex<Vec<(Uuid, String, String, String)>>,
+    }
+
+    impl Default for ProvisionTestLog {
+        fn default() -> Self {
+            Self {
+                sync_odc_calls: Mutex::new(Vec::new()),
+                create_calls: Mutex::new(Vec::new()),
+                create_identity_calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    struct MockUserRepo {
+        find_by_identity_result: Option<(User, UserIdentity)>,
+        find_by_email_result: Option<User>,
+        sync_result: User,
+        create_result: User,
+        log: Arc<ProvisionTestLog>,
+    }
+
+    #[async_trait]
+    impl UserRepo for MockUserRepo {
+        async fn find_by_id(&self, _id: Uuid) -> repo::Result<Option<User>> {
+            unimplemented!()
+        }
+        async fn find_by_email(&self, _email: &str) -> repo::Result<Option<User>> {
+            Ok(self.find_by_email_result.clone())
+        }
+        async fn create(
+            &self,
+            email: &str,
+            display_name: &str,
+            role: &str,
+            email_verified: bool,
+        ) -> repo::Result<User> {
+            self.log.create_calls.lock().unwrap().push((
+                email.to_owned(),
+                display_name.to_owned(),
+                role.to_owned(),
+                email_verified,
+            ));
+            Ok(self.create_result.clone())
+        }
+        async fn update(&self, _id: Uuid, _display_name: Option<&str>) -> repo::Result<User> {
+            unimplemented!()
+        }
+        async fn delete(&self, _id: Uuid) -> repo::Result<()> {
+            unimplemented!()
+        }
+        async fn list(&self, _page: u64, _per_page: u64) -> repo::Result<(Vec<User>, u64)> {
+            unimplemented!()
+        }
+        async fn find_by_identity(
+            &self,
+            _provider: &str,
+            _issuer: &str,
+            _external_sub: &str,
+        ) -> repo::Result<Option<(User, UserIdentity)>> {
+            Ok(self.find_by_identity_result.clone())
+        }
+        async fn find_identity(
+            &self,
+            _provider: &str,
+            _issuer: &str,
+            _external_sub: &str,
+        ) -> repo::Result<Option<UserIdentity>> {
+            unimplemented!()
+        }
+        async fn create_identity(
+            &self,
+            user_id: Uuid,
+            provider: &str,
+            issuer: &str,
+            external_sub: &str,
+        ) -> repo::Result<UserIdentity> {
+            self.log.create_identity_calls.lock().unwrap().push((
+                user_id,
+                provider.to_owned(),
+                issuer.to_owned(),
+                external_sub.to_owned(),
+            ));
+            Ok(UserIdentity {
+                id: Uuid::new_v4(),
+                user_id,
+                provider: provider.to_owned(),
+                issuer: issuer.to_owned(),
+                external_sub: external_sub.to_owned(),
+                created_at: OffsetDateTime::now_utc(),
+            })
+        }
+        async fn sync_oidc_attributes(
+            &self,
+            id: Uuid,
+            display_name: &str,
+            role: &str,
+            email_verified: bool,
+        ) -> repo::Result<User> {
+            self.log.sync_odc_calls.lock().unwrap().push((
+                id,
+                display_name.to_owned(),
+                role.to_owned(),
+                email_verified,
+            ));
+            Ok(self.sync_result.clone())
+        }
+        async fn health_check(&self) -> repo::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    fn test_osc_info() -> OidcUserInfo {
+        OidcUserInfo {
+            sub: "sub-123".to_owned(),
+            issuer: "https://idp.example.com".to_owned(),
+            email: "user@example.com".to_owned(),
+            name: "New Name".to_owned(),
+            email_verified: true,
+            roles: vec!["admin".to_owned()],
+        }
+    }
+
+    fn test_policy() -> ProvisioningPolicy {
+        ProvisioningPolicy::new(vec![], "user".to_owned())
+    }
+
+    #[tokio::test]
+    async fn provision_should_sync_and_link_when_user_exists_by_email_without_identity() {
+        let existing_id = Uuid::new_v4();
+        let log = Arc::new(ProvisionTestLog::default());
+
+        let mock = MockUserRepo {
+            find_by_identity_result: None,
+            find_by_email_result: Some(test_user(
+                existing_id,
+                "user@example.com",
+                "Old Name",
+                "user",
+                false,
+            )),
+            sync_result: test_user(existing_id, "user@example.com", "New Name", "admin", true),
+            create_result: test_user(existing_id, "user@example.com", "New Name", "admin", true),
+            log: Arc::clone(&log),
+        };
+        let svc = UserService::new(Box::new(mock));
+        let policy = test_policy();
+        let oidc_info = test_osc_info();
+
+        let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
+
+        assert_eq!(user.display_name, "New Name");
+        assert_eq!(user.role, "admin");
+        assert!(user.email_verified);
+        assert_eq!(log.sync_odc_calls.lock().unwrap().len(), 1);
+        assert_eq!(log.create_calls.lock().unwrap().len(), 0);
+        assert_eq!(log.create_identity_calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn provision_should_create_user_and_identity_when_user_does_not_exist() {
+        let new_id = Uuid::new_v4();
+        let log = Arc::new(ProvisionTestLog::default());
+
+        let mock = MockUserRepo {
+            find_by_identity_result: None,
+            find_by_email_result: None,
+            sync_result: test_user(new_id, "user@example.com", "New Name", "admin", true),
+            create_result: test_user(new_id, "user@example.com", "New Name", "admin", true),
+            log: Arc::clone(&log),
+        };
+        let svc = UserService::new(Box::new(mock));
+        let policy = test_policy();
+        let oidc_info = test_osc_info();
+
+        let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
+
+        assert_eq!(user.display_name, "New Name");
+        assert_eq!(user.role, "admin");
+        assert_eq!(log.create_calls.lock().unwrap().len(), 1);
+        assert_eq!(log.sync_odc_calls.lock().unwrap().len(), 0);
+        assert_eq!(log.create_identity_calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn provision_should_sync_and_return_when_identity_already_exists() {
+        let existing_id = Uuid::new_v4();
+        let log = Arc::new(ProvisionTestLog::default());
+        let now = OffsetDateTime::now_utc();
+
+        let existing_identity = UserIdentity {
+            id: Uuid::new_v4(),
+            user_id: existing_id,
+            provider: "idp.example.com".to_owned(),
+            issuer: "https://idp.example.com".to_owned(),
+            external_sub: "sub-123".to_owned(),
+            created_at: now,
+        };
+
+        let mock = MockUserRepo {
+            find_by_identity_result: Some((
+                test_user(existing_id, "user@example.com", "Old Name", "user", false),
+                existing_identity,
+            )),
+            find_by_email_result: None,
+            sync_result: test_user(existing_id, "user@example.com", "New Name", "admin", true),
+            create_result: test_user(existing_id, "user@example.com", "New Name", "admin", true),
+            log: Arc::clone(&log),
+        };
+        let svc = UserService::new(Box::new(mock));
+        let policy = test_policy();
+        let oidc_info = test_osc_info();
+
+        let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
+
+        assert_eq!(user.display_name, "New Name");
+        assert_eq!(user.role, "admin");
+        assert_eq!(log.sync_odc_calls.lock().unwrap().len(), 1);
+        assert_eq!(log.create_identity_calls.lock().unwrap().len(), 0);
     }
 
     #[test]

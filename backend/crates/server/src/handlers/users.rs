@@ -1,17 +1,20 @@
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     middleware as axum_middleware,
     routing::{delete, get, post},
 };
 use dto::{
-    CreateUserRequest, PaginatedUserResponse, PaginationParams, UpdateUserRequest, UserResponse,
+    CreateUserRequest, ErrorResponse, PaginatedUserResponse, PaginationParams, UpdateUserRequest,
+    UserResponse,
 };
 use snafu::Snafu;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::audit::{AuditEvent, log_audit_event};
+use crate::middleware::oidc::AuthUser;
 use crate::middleware::{AppState, require_admin, require_manager};
 use crate::problem::ProblemResponse;
 use svc::UserServiceTrait;
@@ -75,12 +78,19 @@ fn to_response(user: &model::user::User) -> UserResponse {
     get,
     path = "/api/v1/users",
     tag = "users",
+    security(
+        ("bearer_auth" = []),
+    ),
     params(
         ("page" = Option<u64>, Query, description = "Page number (1-based)"),
         ("per_page" = Option<u64>, Query, description = "Items per page (1-100)"),
     ),
     responses(
         (status = 200, description = "Paginated list of users", body = PaginatedUserResponse),
+        (status = 400, description = "Invalid pagination parameters", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = ErrorResponse),
+        (status = 403, description = "Insufficient role (requires manager)", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
     )
 )]
 async fn list_users(
@@ -121,12 +131,18 @@ async fn list_users(
     get,
     path = "/api/v1/users/{id}",
     tag = "users",
+    security(
+        ("bearer_auth" = []),
+    ),
     params(
         ("id" = Uuid, Path, description = "User ID"),
     ),
     responses(
         (status = 200, description = "User found", body = UserResponse),
-        (status = 404, description = "User not found"),
+        (status = 401, description = "Missing or invalid bearer token", body = ErrorResponse),
+        (status = 403, description = "Insufficient role (requires manager)", body = ErrorResponse),
+        (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
     )
 )]
 async fn get_user(
@@ -145,14 +161,21 @@ async fn get_user(
     post,
     path = "/api/v1/users",
     tag = "users",
+    security(
+        ("bearer_auth" = []),
+    ),
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "User created", body = UserResponse),
-        (status = 400, description = "Invalid input"),
+        (status = 400, description = "Invalid input", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = ErrorResponse),
+        (status = 403, description = "Insufficient role (requires admin)", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
     )
 )]
 async fn create_user(
     State(state): State<Arc<AppState>>,
+    actor: Option<Extension<AuthUser>>,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserResponse>), UsersError> {
     let user = state
@@ -166,6 +189,14 @@ async fn create_user(
             _ => UsersError::Internal { source: e },
         })?;
 
+    if let Some(Extension(actor)) = actor {
+        log_audit_event(&AuditEvent::UserCreated {
+            actor_id: actor.user_id,
+            created_id: user.id,
+            email: user.email.clone(),
+        });
+    }
+
     Ok((StatusCode::CREATED, Json(to_response(&user))))
 }
 
@@ -173,17 +204,24 @@ async fn create_user(
     put,
     path = "/api/v1/users/{id}",
     tag = "users",
+    security(
+        ("bearer_auth" = []),
+    ),
     params(
         ("id" = Uuid, Path, description = "User ID"),
     ),
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated", body = UserResponse),
-        (status = 404, description = "User not found"),
+        (status = 401, description = "Missing or invalid bearer token", body = ErrorResponse),
+        (status = 403, description = "Insufficient role (requires manager)", body = ErrorResponse),
+        (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
     )
 )]
 async fn update_user(
     State(state): State<Arc<AppState>>,
+    actor: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, UsersError> {
@@ -196,6 +234,13 @@ async fn update_user(
             _ => UsersError::Internal { source: e },
         })?;
 
+    if let Some(Extension(actor)) = actor {
+        log_audit_event(&AuditEvent::UserUpdated {
+            actor_id: actor.user_id,
+            target_id: user.id,
+        });
+    }
+
     Ok(Json(to_response(&user)))
 }
 
@@ -203,22 +248,36 @@ async fn update_user(
     delete,
     path = "/api/v1/users/{id}",
     tag = "users",
+    security(
+        ("bearer_auth" = []),
+    ),
     params(
         ("id" = Uuid, Path, description = "User ID"),
     ),
     responses(
         (status = 204, description = "User deleted"),
-        (status = 404, description = "User not found"),
+        (status = 401, description = "Missing or invalid bearer token", body = ErrorResponse),
+        (status = 403, description = "Insufficient role (requires admin)", body = ErrorResponse),
+        (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
     )
 )]
 async fn delete_user(
     State(state): State<Arc<AppState>>,
+    actor: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, UsersError> {
     state.svc.delete_user(id).await.map_err(|e| match &e {
         svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
         _ => UsersError::Internal { source: e },
     })?;
+
+    if let Some(Extension(actor)) = actor {
+        log_audit_event(&AuditEvent::UserDeleted {
+            actor_id: actor.user_id,
+            target_id: id,
+        });
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
