@@ -70,7 +70,7 @@ project-root/
 
 Backend Rust code style follows the local **`/rust-best-practices`** skill (Apollo GraphQL handbook). Use it when writing, reviewing, or refactoring Rust — covers ownership, error handling (`Result`/`?`), performance, clippy lints, testing, generics, and type-state patterns.
 
-Frontend TypeScript / React / Next.js code style follows the local **`/react-best-practices`** skill (Vercel Labs). Use it when writing, reviewing, or refactoring frontend code — covers Server Components, data fetching, re-render optimization, bundle size, Suspense boundaries, and caching.
+Frontend TypeScript / React / Next.js code style follows the local **`/vercel-react-best-practices`** skill (Vercel Labs). Use it when writing, reviewing, or refactoring frontend code — covers Server Components, data fetching, re-render optimization, bundle size, Suspense boundaries, and caching.
 
 ## Code Quality
 
@@ -107,7 +107,11 @@ The following skills live under `.agents/skills/` and are available via slash-co
 ### Code Style
 
 - **`/rust-best-practices`** — Rust ownership, error handling, performance, clippy, testing, generics, type-state. Use when writing, reviewing, or refactoring backend code.
-- **`/react-best-practices`** — React/Next.js Server Components, data fetching, re-render optimization, bundle size, Suspense, caching. Use when writing, reviewing, or refactoring frontend code.
+- **`/vercel-react-best-practices`** — React/Next.js Server Components, data fetching, re-render optimization, bundle size, Suspense, caching. Use when writing, reviewing, or refactoring frontend code.
+
+### Productivity
+
+- **`/grill-me`** — Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. Use when the user wants to stress-test a plan, get grilled on their design, or mentions "grill me".
 
 ### Engineering
 
