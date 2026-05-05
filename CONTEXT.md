@@ -23,15 +23,27 @@ When naming modules, seams, or concepts during architecture work, use these term
 
 ## Shared Infrastructure
 
-- **AppState** — The application's shared state held by the HTTP/gRPC servers. Contains `UserService`, `OidcValidator`, and `ProvisioningPolicy`.
+- **AppState** — The application's shared state held by the HTTP/gRPC servers. Contains `UserService`, `OidcValidator`, `ProvisioningPolicy`, and `AuditService`.
 - **ProblemResponse** — The RFC 9457 Problem Details error response format used across all HTTP APIs.
-- **AuditEvent** — Security-relevant events (auth success/failure, role denied, user created/updated/deleted) emitted for observability.
+- **AuditEvent** — Security-relevant events emitted by `svc` and `server` layers. Lives in `svc::audit` so business logic can record audits without knowing HTTP.
+- **AuditExporter** — Strategy-pattern trait in `svc::audit`. Implementations (e.g. `StdoutExporter`) live in `server::audit` and may enrich events with HTTP context before export.
+- **AuditService** — Async channel-based audit dispatcher in `svc::audit`. Held in `AppState` and injectable into `UserService`.
+- **AuditEventProxy / AuditEventCtx** — Serializable structs in `server::audit` used by exporters to output structured JSON with optional HTTP context.
 
 ## Transaction & Type Erasure
 
 - **Transaction** — The transaction seam. `commit()` and `rollback()` methods. Implemented by `PgTransaction` (wraps `sqlx::Transaction<'static>`) and `MssqlTransaction` (dedicated `tiberius::Client` TCP connection). Auto-rollback on drop for both adapters.
 - **AnyUserRepo** — Type-erased enum over `PostgresUserRepo` and `MssqlUserRepo`. Returned by `repo::connect()` and stored in `AppState` to keep server code monomorphic.
 - **AnyTransaction** — Type-erased enum over `PgTransaction` and `MssqlTransaction`. Passed into `_in_tx` methods on `UserRepo`.
+
+## Optimistic Locking
+
+- **version** — The `users` table column used for optimistic locking. Incremented on every successful `UPDATE`. `UPDATE` statements include `WHERE id = ? AND version = ?`; a mismatch produces `repo::Error::Conflict` mapped to HTTP `409`.
+
+## Config
+
+- **TlsConfig** — `server.tls` block: `enabled`, `cert_path`, `key_path`. Production defaults to enabled; local dev opts out via `local.yaml`.
+- **AuditConfig** — `audit.exporter` setting (`stdout` | `syslog` | `otel-logs`).
 
 ## Test Concepts
 

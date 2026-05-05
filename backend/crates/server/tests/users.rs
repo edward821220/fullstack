@@ -5,10 +5,11 @@ use axum::{
     http::{Request, StatusCode},
     middleware::from_fn,
 };
+use server::audit::NoopExporter;
 use server::handlers::users::routes as users_routes;
 use server::middleware::oidc::OidcValidator;
 use server::state::AppState;
-use svc::{ProvisioningPolicy, UserService, UserServiceTrait};
+use svc::{AuditService, ProvisioningPolicy, UserService, UserServiceTrait};
 use tower::ServiceExt;
 
 mod common;
@@ -30,10 +31,13 @@ fn test_state() -> Arc<AppState> {
         repo::MockUserRepo::new(),
     )));
     let provisioning = ProvisioningPolicy::new(vec![], "user".to_owned());
+    let audit_exporter: std::sync::Arc<dyn svc::AuditExporter> = std::sync::Arc::new(NoopExporter);
+    let audit = AuditService::new(audit_exporter);
     Arc::new(AppState {
         svc,
         oidc,
         provisioning,
+        audit,
     })
 }
 

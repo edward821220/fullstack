@@ -11,6 +11,7 @@ pub struct UserResponse {
     pub email_verified: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub version: i64,
 }
 
 impl From<&model::user::User> for UserResponse {
@@ -29,6 +30,7 @@ impl From<&model::user::User> for UserResponse {
                 .updated_at
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_default(),
+            version: user.version,
         }
     }
 }

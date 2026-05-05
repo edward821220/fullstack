@@ -53,6 +53,7 @@ fn to_user_pg(row: sqlx::postgres::PgRow) -> User {
         email_verified: row.get("email_verified"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
+        version: row.get("version"),
     }
 }
 
@@ -80,7 +81,7 @@ impl UserRepo for PostgresUserRepo {
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at FROM users WHERE id = $1",
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE id = $1",
         )
         .bind(id)
         .map(to_user_pg)
@@ -91,7 +92,7 @@ impl UserRepo for PostgresUserRepo {
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
         sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at FROM users WHERE email = $1",
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE email = $1",
         )
         .bind(email)
         .map(to_user_pg)
@@ -117,8 +118,8 @@ impl UserRepo for PostgresUserRepo {
         let id = Uuid::new_v4();
 
         sqlx::query(
-            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 1)",
         )
         .bind(id)
         .bind(email)
@@ -145,16 +146,27 @@ impl UserRepo for PostgresUserRepo {
             .ok_or(Error::UserNotFound { id })?;
 
         let new_name = display_name.unwrap_or(&user.display_name);
+        let expected_version = user.version;
 
-        sqlx::query("UPDATE users SET display_name = $1, updated_at = $2 WHERE id = $3")
-            .bind(new_name)
-            .bind(time::OffsetDateTime::now_utc())
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Database {
-                message: e.to_string(),
-            })?;
+        let result = sqlx::query(
+            "UPDATE users SET display_name = $1, updated_at = $2, version = version + 1 WHERE id = $3 AND version = $4",
+        )
+        .bind(new_name)
+        .bind(time::OffsetDateTime::now_utc())
+        .bind(id)
+        .bind(expected_version)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::Conflict {
+                resource: "user".to_owned(),
+                expected_version,
+            });
+        }
 
         self.find_by_id(id).await?.ok_or(Error::UserNotFound { id })
     }
@@ -185,7 +197,7 @@ impl UserRepo for PostgresUserRepo {
         let offset = (page - 1) * per_page;
 
         let users: Vec<User> = sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
              FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
         )
         .bind(per_page as i64)
@@ -286,7 +298,7 @@ impl UserRepo for PostgresUserRepo {
         let now = time::OffsetDateTime::now_utc();
 
         sqlx::query(
-            "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4 WHERE id = $5",
+            "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4, version = version + 1 WHERE id = $5",
         )
         .bind(display_name)
         .bind(role)
@@ -312,7 +324,7 @@ impl UserRepo for PostgresUserRepo {
 
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
         sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
              FROM users WHERE email = $1 FOR UPDATE",
         )
         .bind(email)
@@ -336,8 +348,8 @@ impl UserRepo for PostgresUserRepo {
         let id = Uuid::new_v4();
 
         sqlx::query(
-            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 1)",
         )
         .bind(id)
         .bind(email)
@@ -351,7 +363,7 @@ impl UserRepo for PostgresUserRepo {
         .map_err(|e| Error::Database { message: e.to_string() })?;
 
         let user = sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
              FROM users WHERE id = $1",
         )
         .bind(id)
@@ -376,7 +388,7 @@ impl UserRepo for PostgresUserRepo {
         let now = time::OffsetDateTime::now_utc();
 
         sqlx::query(
-            "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4
+            "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4, version = version + 1
              WHERE id = $5",
         )
         .bind(display_name)
@@ -391,7 +403,7 @@ impl UserRepo for PostgresUserRepo {
         })?;
 
         sqlx::query(
-            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
              FROM users WHERE id = $1",
         )
         .bind(id)
@@ -452,7 +464,11 @@ mod tests {
     fn db_config(port: u16) -> DatabaseConfig {
         DatabaseConfig {
             driver: config::DatabaseDriver::Postgres,
-            database_url: format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            database: "postgres".to_owned(),
+            username: "postgres".to_owned(),
+            password: "postgres".to_owned(),
             max_connections: 2,
             connect_retry_attempts: 2,
             connect_retry_delay_ms: 1000,

@@ -6,7 +6,8 @@ CREATE TABLE users (
     role NVARCHAR(50) NOT NULL DEFAULT 'user',
     email_verified BIT NOT NULL DEFAULT 0,
     created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
-    updated_at DATETIME2 NOT NULL DEFAULT GETDATE()
+    updated_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+    version BIGINT NOT NULL DEFAULT 1
 );
 
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='user_identities' AND xtype='U')

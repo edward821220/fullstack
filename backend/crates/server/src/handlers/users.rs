@@ -13,11 +13,11 @@ use snafu::Snafu;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::audit::{AuditEvent, log_audit_event};
 use crate::middleware::oidc::AuthUser;
 use crate::middleware::{require_admin, require_manager};
 use crate::problem::ProblemResponse;
 use crate::state::AppState;
+use svc::AuditEvent;
 use svc::UserServiceTrait;
 
 #[derive(Debug, Snafu)]
@@ -26,6 +26,11 @@ pub enum UsersError {
     UserNotFound { id: Uuid },
     #[snafu(display("Invalid input: {message}"))]
     InvalidInput { message: String },
+    #[snafu(display("Conflict: {resource} was modified (expected version {expected_version})"))]
+    Conflict {
+        resource: String,
+        expected_version: i64,
+    },
     #[snafu(display("Internal error: {source}"))]
     Internal { source: svc::Error },
 }
@@ -36,6 +41,13 @@ impl From<svc::Error> for UsersError {
             svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
             svc::Error::InvalidInput { message } => UsersError::InvalidInput {
                 message: message.clone(),
+            },
+            svc::Error::Conflict {
+                resource,
+                expected_version,
+            } => UsersError::Conflict {
+                resource: resource.clone(),
+                expected_version: *expected_version,
             },
             _ => UsersError::Internal { source },
         }
@@ -50,6 +62,16 @@ impl axum::response::IntoResponse for UsersError {
                 format!("User with id {} not found", id),
             ),
             UsersError::InvalidInput { message } => (StatusCode::BAD_REQUEST, message.clone()),
+            UsersError::Conflict {
+                resource,
+                expected_version,
+            } => (
+                StatusCode::CONFLICT,
+                format!(
+                    "{} was modified concurrently (expected version {})",
+                    resource, expected_version
+                ),
+            ),
             UsersError::Internal { .. } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_owned(),
@@ -190,7 +212,7 @@ async fn create_user(
         .await?;
 
     if let Some(Extension(actor)) = actor {
-        log_audit_event(&AuditEvent::UserCreated {
+        state.audit.record(AuditEvent::UserCreated {
             actor_id: actor.user_id,
             created_id: user.id,
             email: user.email.clone(),
@@ -231,7 +253,7 @@ async fn update_user(
         .await?;
 
     if let Some(Extension(actor)) = actor {
-        log_audit_event(&AuditEvent::UserUpdated {
+        state.audit.record(AuditEvent::UserUpdated {
             actor_id: actor.user_id,
             target_id: user.id,
         });
@@ -266,7 +288,7 @@ async fn delete_user(
     state.svc.delete_user(id).await?;
 
     if let Some(Extension(actor)) = actor {
-        log_audit_event(&AuditEvent::UserDeleted {
+        state.audit.record(AuditEvent::UserDeleted {
             actor_id: actor.user_id,
             target_id: id,
         });

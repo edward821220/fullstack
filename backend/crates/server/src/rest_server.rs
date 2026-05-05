@@ -16,11 +16,43 @@ use tower_http::{
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
+use crate::audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
 use crate::handlers::{health, users};
 use crate::middleware::OidcValidator;
 use crate::middleware::oidc::oidc_middleware;
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
+
+fn create_audit_exporter(
+    config: &config::AuditConfig,
+    service_name: &str,
+) -> Arc<dyn svc::AuditExporter> {
+    match config.exporter.as_str() {
+        "syslog" => {
+            let cfg = config.syslog.as_ref().expect("syslog config validated");
+            Arc::new(SyslogExporter::new(
+                cfg.host.clone(),
+                cfg.port,
+                cfg.protocol.clone(),
+                &cfg.facility,
+                service_name.to_owned(),
+                std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_owned()),
+            ))
+        }
+        "otel-logs" => {
+            let cfg = config
+                .otel_logs
+                .as_ref()
+                .expect("otel_logs config validated");
+            Arc::new(OtelLogsExporter::new(
+                cfg.endpoint.clone(),
+                cfg.timeout_seconds,
+                service_name.to_owned(),
+            ))
+        }
+        _ => Arc::new(NoopExporter),
+    }
+}
 
 pub async fn serve_rest(
     config: AppConfig,
@@ -33,10 +65,14 @@ pub async fn serve_rest(
     let provisioning =
         svc::ProvisioningPolicy::new(config.auth.allowed_email_domains.clone(), "user".to_owned());
 
+    let audit_exporter = create_audit_exporter(&config.audit, &config.observability.service_name);
+    let audit_service = svc::AuditService::new(audit_exporter);
+
     let app_state = Arc::new(AppState {
         svc: svc.clone(),
         oidc: oidc_validator,
         provisioning,
+        audit: audit_service,
     });
 
     let cors = CorsLayer::new()

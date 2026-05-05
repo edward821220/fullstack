@@ -14,7 +14,7 @@ pub async fn run(config: &config::DatabaseConfig) -> Result<(), Box<dyn std::err
             tracing::info!("Running PostgreSQL migrations via refinery");
 
             let (mut client, connection) =
-                tokio_postgres::connect(&config.database_url, tokio_postgres::NoTls).await?;
+                tokio_postgres::connect(&config.to_postgres_url(), tokio_postgres::NoTls).await?;
 
             tokio::spawn(async move {
                 if let Err(e) = connection.await {

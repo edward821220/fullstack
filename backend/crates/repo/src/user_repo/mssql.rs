@@ -75,6 +75,7 @@ fn row_to_user(row: &tiberius::Row) -> Result<User> {
             .ok_or_else(|| Error::Database {
                 message: "updated_at column missing".to_owned(),
             })?,
+        version: row.get::<i64, _>("version").unwrap_or(1),
     })
 }
 
@@ -115,7 +116,7 @@ impl UserRepo for MssqlUserRepo {
 
         let rows = client
             .query(
-                "SELECT id, email, display_name, role, email_verified, created_at, updated_at FROM users WHERE id = @P1",
+                "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE id = @P1",
                 &[&id],
             )
             .await
@@ -138,7 +139,7 @@ impl UserRepo for MssqlUserRepo {
 
         let rows = client
             .query(
-                "SELECT id, email, display_name, role, email_verified, created_at, updated_at FROM users WHERE email = @P1",
+                "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE email = @P1",
                 &[&email],
             )
             .await
@@ -175,9 +176,9 @@ impl UserRepo for MssqlUserRepo {
         })?;
 
         let rows = client.query(
-            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
-             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
-             VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7)",
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
+             VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, 1)",
             &[
                 &id,
                 &email,
@@ -208,6 +209,7 @@ impl UserRepo for MssqlUserRepo {
             .ok_or(Error::UserNotFound { id })?;
 
         let new_name = display_name.unwrap_or(&user.display_name);
+        let expected_version = user.version;
         let now = time::OffsetDateTime::now_utc();
 
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
@@ -215,10 +217,10 @@ impl UserRepo for MssqlUserRepo {
         })?;
 
         let rows = client.query(
-            "UPDATE users SET display_name = @P1, updated_at = @P2
-             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
-             WHERE id = @P3",
-            &[&new_name, &time::PrimitiveDateTime::new(now.date(), now.time()), &id],
+            "UPDATE users SET display_name = @P1, updated_at = @P2, version = version + 1
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
+             WHERE id = @P3 AND version = @P4",
+            &[&new_name, &time::PrimitiveDateTime::new(now.date(), now.time()), &id, &expected_version],
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
@@ -227,8 +229,13 @@ impl UserRepo for MssqlUserRepo {
             message: e.to_string(),
         })?;
 
-        row.ok_or(Error::UserNotFound { id })
-            .and_then(|r| row_to_user(&r))
+        match row {
+            Some(r) => row_to_user(&r),
+            None => Err(Error::Conflict {
+                resource: "user".to_owned(),
+                expected_version,
+            }),
+        }
     }
 
     async fn delete(&self, id: Uuid) -> Result<()> {
@@ -278,7 +285,7 @@ impl UserRepo for MssqlUserRepo {
 
         let rows = client
             .query(
-                "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+                "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
                  FROM users ORDER BY created_at DESC OFFSET @P1 ROWS FETCH NEXT @P2 ROWS ONLY",
                 &[&offset, &limit],
             )
@@ -424,8 +431,8 @@ impl UserRepo for MssqlUserRepo {
         })?;
 
         let rows = client.query(
-            "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4
-             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
+            "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4, version = version + 1
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
              WHERE id = @P5",
             &[&display_name, &role, &email_verified, &time::PrimitiveDateTime::new(now.date(), now.time()), &id],
         )
@@ -459,7 +466,7 @@ impl UserRepo for MssqlUserRepo {
         let rows = tx
             .client
             .query(
-                "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+                "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
                  FROM users WITH (UPDLOCK, HOLDLOCK) WHERE email = @P1",
                 &[&email],
             )
@@ -490,9 +497,9 @@ impl UserRepo for MssqlUserRepo {
         let id = Uuid::new_v4();
 
         let rows = tx.client.query(
-            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
-             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
-             VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7)",
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
+             VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, 1)",
             &[
                 &id,
                 &email,
@@ -527,8 +534,8 @@ impl UserRepo for MssqlUserRepo {
         let now = time::OffsetDateTime::now_utc();
 
         let rows = tx.client.query(
-            "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4
-             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
+            "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4, version = version + 1
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
              WHERE id = @P5",
             &[
                 &display_name,
@@ -600,7 +607,11 @@ mod tests {
     fn db_config(port: u16) -> DatabaseConfig {
         DatabaseConfig {
             driver: config::DatabaseDriver::Mssql,
-            database_url: format!("mssql://sa:yourStrong(!)Password@127.0.0.1:{port}/master"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            database: "master".to_owned(),
+            username: "sa".to_owned(),
+            password: "yourStrong(!)Password".to_owned(),
             max_connections: 2,
             connect_retry_attempts: 5,
             connect_retry_delay_ms: 2000,

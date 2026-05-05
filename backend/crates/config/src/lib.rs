@@ -14,6 +14,10 @@ fn default_otlp_timeout_seconds() -> u64 {
     5
 }
 
+fn default_grpc_enabled() -> bool {
+    false
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Configuration error: {source}"))]
@@ -32,6 +36,7 @@ pub struct AppConfig {
     pub auth: AuthConfig,
     pub observability: ObservabilityConfig,
     pub grpc: GrpcConfig,
+    pub audit: AuditConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,7 +45,15 @@ pub struct ServerConfig {
     pub port: u16,
     pub timeout_seconds: u64,
     pub shutdown_timeout_seconds: u64,
+    pub tls: TlsConfig,
     pub cors_origins: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TlsConfig {
+    pub enabled: bool,
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -64,7 +77,11 @@ impl DatabaseDriver {
 pub struct DatabaseConfig {
     #[serde(default)]
     pub driver: DatabaseDriver,
-    pub database_url: String,
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
     pub max_connections: u32,
     pub connect_retry_attempts: u32,
     pub connect_retry_delay_ms: u64,
@@ -77,27 +94,22 @@ impl DatabaseConfig {
         &self.driver
     }
 
-    pub fn to_tiberius_config(&self) -> std::result::Result<tiberius::Config, url::ParseError> {
-        let url = url::Url::parse(&self.database_url)?;
-
-        let host = url.host_str().ok_or(url::ParseError::EmptyHost)?;
-
-        let port: u16 = url.port().unwrap_or(1433);
-
-        let database = url
-            .path_segments()
-            .and_then(|mut segs| segs.next())
-            .filter(|s| !s.is_empty())
-            .ok_or(url::ParseError::EmptyHost)?;
-
-        let user = url.username().to_owned();
-        let password = url.password().ok_or(url::ParseError::EmptyHost)?.to_owned();
+    pub fn to_tiberius_config(&self) -> std::result::Result<tiberius::Config, String> {
+        if self.host.is_empty() {
+            return Err("database host is empty".to_owned());
+        }
+        if self.database.is_empty() {
+            return Err("database name is empty".to_owned());
+        }
 
         let mut config = tiberius::Config::new();
-        config.host(host);
-        config.port(port);
-        config.database(database);
-        config.authentication(tiberius::AuthMethod::sql_server(&user, &password));
+        config.host(&self.host);
+        config.port(self.port);
+        config.database(&self.database);
+        config.authentication(tiberius::AuthMethod::sql_server(
+            &self.username,
+            &self.password,
+        ));
 
         if self.encrypt {
             config.encryption(tiberius::EncryptionLevel::Required);
@@ -109,13 +121,20 @@ impl DatabaseConfig {
         Ok(config)
     }
 
-    pub fn extract_mssql_database_name(&self) -> std::result::Result<String, url::ParseError> {
-        let url = url::Url::parse(&self.database_url)?;
-        url.path_segments()
-            .and_then(|mut segs| segs.next())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_owned())
-            .ok_or(url::ParseError::EmptyHost)
+    pub fn extract_mssql_database_name(&self) -> std::result::Result<String, String> {
+        if self.database.is_empty() {
+            Err("database name is empty".to_owned())
+        } else {
+            Ok(self.database.clone())
+        }
+    }
+
+    /// Build a Postgres connection string from discrete fields.
+    pub fn to_postgres_url(&self) -> String {
+        format!(
+            "postgres://{}:{}@{}:{}/{}",
+            self.username, self.password, self.host, self.port, self.database
+        )
     }
 }
 
@@ -213,8 +232,38 @@ pub struct GrpcConfig {
     pub port: u16,
 }
 
-fn default_grpc_enabled() -> bool {
-    true
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditConfig {
+    pub exporter: String,
+    #[serde(default)]
+    pub syslog: Option<SyslogConfig>,
+    #[serde(default)]
+    pub otel_logs: Option<OtelLogsConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyslogConfig {
+    pub host: String,
+    pub port: u16,
+    #[serde(default = "default_syslog_protocol")]
+    pub protocol: String,
+    #[serde(default = "default_syslog_facility")]
+    pub facility: String,
+}
+
+fn default_syslog_protocol() -> String {
+    "udp".to_owned()
+}
+
+fn default_syslog_facility() -> String {
+    "local0".to_owned()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OtelLogsConfig {
+    pub endpoint: String,
+    #[serde(default = "default_otlp_timeout_seconds")]
+    pub timeout_seconds: u64,
 }
 
 impl AppConfig {
@@ -240,6 +289,25 @@ impl AppConfig {
             self.grpc_addr()?;
         }
 
+        // TLS validation
+        if self.server.tls.enabled {
+            if self.server.tls.cert_path.is_empty() {
+                return Err(Error::Invalid {
+                    message: "server.tls.cert_path must be set when TLS is enabled. \
+                              For local development, create config/local.yaml with tls.enabled: false"
+                        .to_owned(),
+                });
+            }
+            if self.server.tls.key_path.is_empty() {
+                return Err(Error::Invalid {
+                    message: "server.tls.key_path must be set when TLS is enabled. \
+                              For local development, create config/local.yaml with tls.enabled: false"
+                        .to_owned(),
+                });
+            }
+        }
+
+        // Auth validation
         if self.auth.enabled {
             if self.auth.issuer_url.is_empty() {
                 return Err(Error::Invalid {
@@ -251,14 +319,41 @@ impl AppConfig {
                     message: "auth.audience must contain at least one audience value when auth is enabled".to_owned(),
                 });
             }
+            if self.auth.issuer_url.starts_with("http://") {
+                let is_localhost = self.auth.issuer_url.contains("localhost")
+                    || self.auth.issuer_url.contains("127.0.0.1");
+                if !is_localhost {
+                    return Err(Error::Invalid {
+                        message: "auth.issuer_url must use https:// in production (non-localhost)"
+                            .to_owned(),
+                    });
+                }
+            }
         }
 
-        if self.database.database_url.is_empty() {
+        // Database validation
+        if self.database.host.is_empty() {
             return Err(Error::Invalid {
-                message: "database.database_url must be set".to_owned(),
+                message: "database.host must be set".to_owned(),
+            });
+        }
+        if self.database.database.is_empty() {
+            return Err(Error::Invalid {
+                message: "database.database must be set".to_owned(),
+            });
+        }
+        if self.database.username.is_empty() {
+            return Err(Error::Invalid {
+                message: "database.username must be set".to_owned(),
+            });
+        }
+        if self.database.password.is_empty() {
+            return Err(Error::Invalid {
+                message: "database.password must be set".to_owned(),
             });
         }
 
+        // Observability validation
         if self.observability.service_name.trim().is_empty() {
             return Err(Error::Invalid {
                 message: "observability.service_name must be set".to_owned(),
@@ -276,6 +371,54 @@ impl AppConfig {
             return Err(Error::Invalid {
                 message: "observability.otlp.timeout_seconds must be greater than 0".to_owned(),
             });
+        }
+
+        // Audit validation
+        match self.audit.exporter.as_str() {
+            "none" => {}
+            "syslog" => {
+                let cfg = self.audit.syslog.as_ref().ok_or_else(|| Error::Invalid {
+                    message: "audit.syslog must be configured when exporter is 'syslog'".to_owned(),
+                })?;
+                if cfg.host.is_empty() {
+                    return Err(Error::Invalid {
+                        message: "audit.syslog.host must be set".to_owned(),
+                    });
+                }
+                if cfg.protocol != "udp" && cfg.protocol != "tcp" {
+                    return Err(Error::Invalid {
+                        message: "audit.syslog.protocol must be 'udp' or 'tcp'".to_owned(),
+                    });
+                }
+            }
+            "otel-logs" => {
+                let cfg = self
+                    .audit
+                    .otel_logs
+                    .as_ref()
+                    .ok_or_else(|| Error::Invalid {
+                        message: "audit.otel_logs must be configured when exporter is 'otel-logs'"
+                            .to_owned(),
+                    })?;
+                if cfg.endpoint.is_empty() {
+                    return Err(Error::Invalid {
+                        message: "audit.otel_logs.endpoint must be set".to_owned(),
+                    });
+                }
+                if cfg.timeout_seconds == 0 {
+                    return Err(Error::Invalid {
+                        message: "audit.otel_logs.timeout_seconds must be greater than 0"
+                            .to_owned(),
+                    });
+                }
+            }
+            other => {
+                return Err(Error::Invalid {
+                    message: format!(
+                        "audit.exporter must be 'none', 'syslog', or 'otel-logs', got: {other}"
+                    ),
+                });
+            }
         }
 
         Ok(())
@@ -315,12 +458,20 @@ mod tests {
                 port: 3001,
                 timeout_seconds: 30,
                 shutdown_timeout_seconds: 30,
+                tls: TlsConfig {
+                    enabled: false,
+                    cert_path: String::new(),
+                    key_path: String::new(),
+                },
                 cors_origins: vec!["http://localhost:3000".to_owned()],
             },
             database: DatabaseConfig {
                 driver: DatabaseDriver::Mssql,
-                database_url: "mssql://sa:Password!123@localhost:1433/fullstack_template"
-                    .to_owned(),
+                host: "localhost".to_owned(),
+                port: 1433,
+                database: "fullstack_template".to_owned(),
+                username: "sa".to_owned(),
+                password: "StrongDevPassword123!".to_owned(),
                 max_connections: 10,
                 connect_retry_attempts: 3,
                 connect_retry_delay_ms: 100,
@@ -345,9 +496,14 @@ mod tests {
                 otlp: OtlpConfig::default(),
             },
             grpc: GrpcConfig {
-                enabled: true,
+                enabled: false,
                 host: "127.0.0.1".to_owned(),
                 port: 50051,
+            },
+            audit: AuditConfig {
+                exporter: "none".to_owned(),
+                syslog: None,
+                otel_logs: None,
             },
         }
     }
@@ -378,5 +534,45 @@ mod tests {
         let mut config = make_config();
         config.observability.otlp.timeout_seconds = 0;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_require_tls_cert_when_tls_enabled() {
+        let mut config = make_config();
+        config.server.tls.enabled = true;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_accept_tls_when_configured() {
+        let mut config = make_config();
+        config.server.tls.enabled = true;
+        config.server.tls.cert_path = "/tmp/cert.pem".to_owned();
+        config.server.tls.key_path = "/tmp/key.pem".to_owned();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_should_require_auth_config_when_enabled() {
+        let mut config = make_config();
+        config.auth.enabled = true;
+        config.auth.issuer_url = String::new();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_reject_http_issuer_outside_localhost() {
+        let mut config = make_config();
+        config.auth.enabled = true;
+        config.auth.issuer_url = "http://idp.bank.com".to_owned();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_allow_http_issuer_for_localhost() {
+        let mut config = make_config();
+        config.auth.enabled = true;
+        config.auth.issuer_url = "http://localhost:8080/dex".to_owned();
+        assert!(config.validate().is_ok());
     }
 }

@@ -46,14 +46,17 @@ project-root/
 
 ### Backend
 
-- **Default DB**: MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.database_url` to a `postgres://` connection string.
+- **Default DB**: MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.host` / `database.database`.
+- **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `AppConfig::validate()` panics on hardcoded passwords, missing TLS certs, and HTTP issuer URLs outside localhost.
 - **Migrations**: refinery (supports both PostgreSQL and MSSQL). Embedded in server binary, run on startup.
 - **Error handling**: SNAFU per-layer enums. `repo::Error` → `svc::Error` → `api::UsersError`.
 - **API responses**: Success = raw JSON (no envelope), HTTP 2xx. Error = JSON with `type`/`title`/`status`/`detail` fields (RFC 9457 Problem Details subset), HTTP 4xx/5xx.
-- **Auth**: OIDC Bearer token. JWT validated via JWKS (jsonwebtoken crate, manual discovery or manual endpoints). JIT user provisioning with email domain whitelist and role resolution via `ProvisioningPolicy`.
+- **Auth**: OIDC Bearer token. JWT validated via JWKS (jsonwebtoken crate, manual discovery or manual endpoints). JIT user provisioning with email domain whitelist and role resolution via `ProvisioningPolicy`. **Auth is enabled by default**; local development requires `local.yaml` to explicitly disable it.
 - **Authorization**: IdP-driven RBAC. The IdP is the authority for role assignment. On each request with a valid token, the middleware syncs the user's `role`, `display_name`, and `email_verified` from the current OIDC claims. Role is derived from claims via `ProvisioningPolicy::resolve_role()`, which maps well-known role names (admin/administrator/superuser → admin, manager/supervisor → manager) from the configured claim source (`roles` or `groups`). Hierarchical: Admin > Manager > User. Routes: list/get/update require Manager+; create/delete require Admin. When auth is disabled, all requests pass through.
 - **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented under `repo/src/user_repo/`. Adapter-specific testcontainers tests live in the same file as the adapter (`#[cfg(test)]`). A `test-helpers` feature provides `MockUserRepo` for upstream unit tests.
-- **gRPC**: Port 50051. Service-to-service only. Currently provides `SayHello` and `HealthCheck` as placeholder patterns.
+- **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Project-specific gRPC contracts should be added per service.
+- **Audit**: `AuditExporter` trait (Strategy pattern) with `StdoutExporter` default. `AuditService` uses an async channel to avoid blocking handlers. Events are structured JSON with `request_id`, `trace_id`, `client_ip`, `user_agent`. Future exporters: syslog, OTLP logs.
+- **Optimistic Locking**: `users` table has a `version` column. `UPDATE` increments `version` and checks `WHERE id = ? AND version = ?`, returning `409 CONFLICT` on stale data.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
 
 ### Frontend

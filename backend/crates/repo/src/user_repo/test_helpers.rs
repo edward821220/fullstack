@@ -117,6 +117,7 @@ impl UserRepo for MockUserRepo {
             email_verified,
             created_at: now,
             updated_at: now,
+            version: 1,
         };
         users.push(user.clone());
         Ok(user)
@@ -132,6 +133,7 @@ impl UserRepo for MockUserRepo {
             user.display_name = n.to_owned();
         }
         user.updated_at = time::OffsetDateTime::now_utc();
+        user.version += 1;
         Ok(user.clone())
     }
 
@@ -238,6 +240,7 @@ impl UserRepo for MockUserRepo {
         u.role = role.to_owned();
         u.email_verified = email_verified;
         u.updated_at = time::OffsetDateTime::now_utc();
+        u.version += 1;
         Ok(u.clone())
     }
 
@@ -271,6 +274,7 @@ impl UserRepo for MockUserRepo {
             email_verified,
             created_at: now,
             updated_at: now,
+            version: 1,
         };
         tx.users.push(user.clone());
         Ok(user)
@@ -293,6 +297,7 @@ impl UserRepo for MockUserRepo {
         u.role = role.to_owned();
         u.email_verified = email_verified;
         u.updated_at = time::OffsetDateTime::now_utc();
+        u.version += 1;
         Ok(u.clone())
     }
 

@@ -37,7 +37,13 @@ lefthook install
 
 `docker-compose.yml` in this repository is for local development only.
 
-### 1. Start Database
+### 1. Create Local Development Config
+
+```bash
+cp backend/config/local.example.yaml backend/config/local.yaml
+```
+
+### 2. Start Database
 
 ```bash
 # MS SQL Server (requires --profile mssql)
@@ -47,7 +53,7 @@ docker compose --profile mssql up -d
 docker compose up -d
 ```
 
-### 2. Run Backend & Frontend Locally
+### 3. Run Backend & Frontend Locally
 
 ```bash
 # Backend (http://localhost:3001, gRPC :50051)
@@ -116,7 +122,7 @@ cp backend/config/local.example.yaml backend/config/local.yaml
 
 ### Auth Setup
 
-Enable auth: set `auth.enabled: true` in `backend/config/default.yaml` (disabled by default for local development).
+Auth is **enabled by default** in `backend/config/default.yaml`. For local development, create `backend/config/local.yaml` and set `auth.enabled: false` (the example file already does this).
 
 #### Local OIDC with Dex
 
@@ -161,15 +167,13 @@ auth:
   danger_accept_invalid_certs: true
 ```
 
-### gRPC Template
+### gRPC Health Service
 
-The backend now ships a reusable `users.v1.UsersService` gRPC contract:
+The gRPC server provides a minimal `health.v1.HealthService` for Kubernetes liveness/readiness probes:
 
-- `GetUser`
-- `ListUsers`
 - `HealthCheck`
 
-The service is backed by the same `svc::UserService` used by REST and reuses the same OIDC validation + RBAC rules.
+This keeps the gRPC surface small and focused on infrastructure concerns. Project-specific gRPC contracts should be added per service.
 
 ## Architecture
 

@@ -17,12 +17,25 @@ pub enum Error {
 
     #[snafu(display("User with email {email} not in whitelist"))]
     NotInWhitelist { email: String },
+
+    #[snafu(display("{resource} was modified concurrently (expected version {expected_version})"))]
+    Conflict {
+        resource: String,
+        expected_version: i64,
+    },
 }
 
 impl From<RepoError> for Error {
     fn from(source: RepoError) -> Self {
         match &source {
             RepoError::UserNotFound { id } => Error::NotFound { id: *id },
+            RepoError::Conflict {
+                resource,
+                expected_version,
+            } => Error::Conflict {
+                resource: resource.clone(),
+                expected_version: *expected_version,
+            },
             _ => Error::Repository { source },
         }
     }

@@ -22,4 +22,10 @@ pub enum Error {
 
     #[snafu(display("Transaction error: {message}"))]
     Transaction { message: String },
+
+    #[snafu(display("{resource} was modified concurrently (expected version {expected_version})"))]
+    Conflict {
+        resource: String,
+        expected_version: i64,
+    },
 }

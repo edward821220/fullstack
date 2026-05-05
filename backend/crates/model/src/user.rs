@@ -10,4 +10,5 @@ pub struct User {
     pub email_verified: bool,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,
+    pub version: i64,
 }

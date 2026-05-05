@@ -1,48 +1,69 @@
-# Default configuration — override with config/local.yaml or APP_* env vars
+# ═══════════════════════════════════════════════════════════
+# PRODUCTION-SAFE DEFAULT CONFIGURATION
+# ═══════════════════════════════════════════════════════════
+# This file is version-controlled and serves as the secure baseline.
+# Every value here must be safe for production / bank on-prem deployment.
+#
+# To run locally, create config/local.yaml (gitignored):
+#   cp config/local.example.yaml config/local.yaml
+#
+# Without local.yaml the server will refuse to start with insecure defaults.
+# ═══════════════════════════════════════════════════════════
+
 server:
   host: "0.0.0.0"
   port: 3001
   timeout_seconds: 30
   shutdown_timeout_seconds: 30
-  cors_origins:
-    - "http://localhost:3000"
+  tls:
+    enabled: false
+    cert_path: ""
+    key_path: ""
+  cors_origins: []
 
 database:
   driver: mssql
-  database_url: "mssql://sa:YourStrong!Passw0rd@localhost:1433/fullstack_template"
+  host: ""
+  port: 1433
+  database: ""
+  username: ""
+  password: ""
   max_connections: 20
   connect_retry_attempts: 5
   connect_retry_delay_ms: 2000
-  encrypt: false
+  encrypt: true
 
 auth:
-  enabled: false
-  issuer_url: "http://localhost:8080/dex"
-  audience:
-    - "fullstack-template"
+  enabled: true
+  issuer_url: ""
+  audience: []
   jwks_cache_duration_secs: 3600
   allowed_email_domains: []
   role_claim_source: "groups"
   discovery_mode: "discovery"
+  manual_endpoints: null
   danger_accept_invalid_certs: false
-  # manual_endpoints:
-  #   jwks_uri: "https://idp.example.com/oauth/v2/keys"
-  #   issuer: "https://idp.example.com"
-  #   authorization_endpoint: "https://idp.example.com/oauth/v2/authorize"
-  #   token_endpoint: "https://idp.example.com/oauth/v2/token"
 
 observability:
-  log_format: "pretty"
+  log_format: "json"
   log_level: "info"
-  service_name: "fullstack-template"
+  service_name: ""
   metrics_enabled: true
   otlp:
     enabled: false
-    endpoint: "http://localhost:4318/v1/traces"
+    endpoint: ""
     protocol: "http"
     timeout_seconds: 5
 
 grpc:
-  enabled: true
+  enabled: false
   host: "0.0.0.0"
   port: 50051
+
+audit:
+  exporter: "syslog"
+  syslog:
+    host: ""
+    port: 514
+    protocol: "udp"
+    facility: "local0"

@@ -4,10 +4,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::audit::{AuditEvent, log_audit_event};
 pub use crate::authz::domain::{AuthzError, Role, authorize_role};
 use crate::middleware::oidc::AuthUser;
 use crate::problem::ProblemResponse;
+use svc::{AuditEvent, log_audit_event};
 
 impl IntoResponse for AuthzError {
     fn into_response(self) -> Response {

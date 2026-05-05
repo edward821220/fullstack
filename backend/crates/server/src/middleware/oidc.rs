@@ -12,11 +12,11 @@ use openidconnect::{IssuerUrl, core::CoreProviderMetadata};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::audit::{AuditEvent, log_audit_event};
 use crate::problem::ProblemResponse;
 use crate::state::AppState;
 use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use repo::UserRepo;
+use svc::AuditEvent;
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
 
 #[derive(Debug, Clone)]
@@ -370,7 +370,7 @@ pub async fn oidc_middleware(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| {
-            log_audit_event(&AuditEvent::AuthFailure {
+            state.audit.record(AuditEvent::AuthFailure {
                 reason: "Missing or invalid Bearer token".to_owned(),
             });
             AuthFailure::Unauthorized("Missing or invalid Bearer token".to_owned())
@@ -381,13 +381,13 @@ pub async fn oidc_middleware(
         .authenticate_token(token, state.svc.as_ref(), &state.provisioning)
         .await
         .map_err(|e| {
-            log_audit_event(&AuditEvent::AuthFailure {
+            state.audit.record(AuditEvent::AuthFailure {
                 reason: format!("{e:?}"),
             });
             e
         })?;
 
-    log_audit_event(&AuditEvent::AuthSuccess {
+    state.audit.record(AuditEvent::AuthSuccess {
         user_id: auth_user.user_id,
         email: auth_user.email.clone(),
         role: auth_user.role.clone(),

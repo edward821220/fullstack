@@ -227,6 +227,7 @@ mod tests {
             email_verified,
             created_at: now,
             updated_at: now,
+            version: 1,
         }
     }
 

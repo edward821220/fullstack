@@ -15,5 +15,8 @@ async fn health_should_return_200_with_status_ok() {
     let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
-    assert!(!json["version"].as_str().unwrap().is_empty());
+    assert!(
+        json.get("version").is_none(),
+        "version must not be exposed in health response"
+    );
 }
