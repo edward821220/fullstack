@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::audit::{AuditEvent, log_audit_event};
 use crate::problem::ProblemResponse;
+use crate::state::AppState;
 use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
 
@@ -54,16 +55,10 @@ pub struct AuthUser {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 struct JwkKey {
     kid: String,
-    kty: String,
-    #[serde(default)]
-    alg: Option<String>,
     n: String,
     e: String,
-    #[serde(default)]
-    r#use: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,12 +328,6 @@ impl OidcValidator {
             RoleClaimSource::Groups => claims.groups.clone().unwrap_or_default(),
         }
     }
-}
-
-pub struct AppState {
-    pub svc: Arc<UserService>,
-    pub oidc: Arc<OidcValidator>,
-    pub provisioning: ProvisioningPolicy,
 }
 
 pub async fn oidc_middleware(

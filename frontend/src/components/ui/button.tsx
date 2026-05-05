@@ -1,4 +1,10 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  type ButtonHTMLAttributes,
+  type PropsWithChildren,
+  type ReactElement,
+} from "react";
 import { cn } from "@/lib/utils";
 
 type ButtonVariant = "default" | "secondary" | "ghost" | "outline" | "destructive";
@@ -8,6 +14,7 @@ type ButtonProps = PropsWithChildren<
   ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: ButtonVariant;
     size?: ButtonSize;
+    asChild?: boolean;
   }
 >;
 
@@ -36,19 +43,26 @@ export function Button({
   size = "default",
   type = "button",
   variant = "default",
+  asChild,
   ...props
 }: ButtonProps) {
+  const classes = cn(
+    "inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+    sizeClasses[size],
+    variantClasses[variant],
+    className,
+  );
+
+  if (asChild && isValidElement(children)) {
+    const child = children as ReactElement<{ className?: string }>;
+    return cloneElement(child, {
+      className: cn(classes, child.props.className),
+      ...props,
+    });
+  }
+
   return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        sizeClasses[size],
-        variantClasses[variant],
-        className,
-      )}
-      type={type}
-      {...props}
-    >
+    <button className={classes} type={type} {...props}>
       {children}
     </button>
   );

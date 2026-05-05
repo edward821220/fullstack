@@ -18,6 +18,10 @@ uuid.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["net"] }
 
+[features]
+default = []
+test-helpers = []
+
 [dev-dependencies]
 testcontainers.workspace = true
 testcontainers-modules.workspace = true

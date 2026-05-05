@@ -455,24 +455,24 @@ template 不一定要把全部接好，但至少應該有一個明確 extension 
 
 ## Phase 1 - 修正實際會踩雷的 correctness / contract 問題
 
-- [ ] **修正 `provision_user()` 既有 email 首次綁定 identity 不同步屬性的問題**
-- [ ] **補 `/health/ready` 與 error responses 的 OpenAPI 文件**
-- [ ] **補 backend OIDC + users route 整合測試**
+- [x] **修正 `provision_user()` 既有 email 首次綁定 identity 不同步屬性的問題**
+- [x] **補 `/health/ready` 與 error responses 的 OpenAPI 文件**
+- [x] **補 backend OIDC + users route 整合測試**
 - [ ] **補 frontend login/protected route/API hook 測試**
-- [ ] **新增 server-side backend API adapter for Next App Router**
+- [x] **新增 server-side backend API adapter for Next App Router**
 
 ## Phase 2 - 提升 template 可複制度
 
-- [ ] **建立 frontend feature module 目錄規範並附範例**
+- [x] **建立 frontend feature module 目錄規範並附範例**（維持目前 `components/features/` + `hooks/` + `lib/api/` 架構，以 users 作為完整垂直範例）
 - [ ] **建立 backend 新增 endpoint / service / repo / dto 的 checklist**
-- [ ] **提供一個 reference business domain slice，而不是只有 users/demo**
-- [ ] **加入 audit event / security event abstraction**
-- [ ] **補部署基線文件（不是 docker-compose prod，而是 bank on-prem 的部署要求與 override points）**
+- [x] **提供一個 reference business domain slice，而不是只有 users/demo**（users 已為完整 slice；accounts 孤兒檔案已移除）
+- [x] **加入 audit event / security event abstraction**
+- [ ] **~~補部署基線文件（不是 docker-compose prod，而是 bank on-prem 的部署要求與 override points）~~**（維持 local docker-compose / Dockerfile 即可）
 
 ## Phase 3 - 收尾與體驗提升
 
 - [ ] 刪掉 placeholder 測試與 demo 文案
-- [ ] 補 app shell / common layout / empty/error/loading UI
+- [x] 補 app shell / common layout / empty/error/loading UI
 - [ ] 補範例環境命名、secret naming、config naming conventions
 
 ---

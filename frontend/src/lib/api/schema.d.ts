@@ -52,12 +52,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/health/ready": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["health_ready"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     CreateUserRequest: {
       display_name: string;
+      /** Format: email */
       email: string;
     };
     ErrorResponse: {
@@ -125,6 +142,42 @@ export interface operations {
           "application/json": components["schemas"]["PaginatedUserResponse"];
         };
       };
+      /** @description Invalid pagination parameters */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Missing or invalid bearer token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Insufficient role (requires manager) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
   create_user: {
@@ -154,7 +207,36 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Missing or invalid bearer token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Insufficient role (requires admin) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -179,12 +261,41 @@ export interface operations {
           "application/json": components["schemas"]["UserResponse"];
         };
       };
+      /** @description Missing or invalid bearer token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Insufficient role (requires manager) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       /** @description User not found */
       404: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -213,12 +324,41 @@ export interface operations {
           "application/json": components["schemas"]["UserResponse"];
         };
       };
+      /** @description Missing or invalid bearer token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Insufficient role (requires manager) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       /** @description User not found */
       404: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -241,12 +381,41 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Missing or invalid bearer token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Insufficient role (requires admin) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       /** @description User not found */
       404: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -266,6 +435,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HealthResponse"];
+        };
+      };
+    };
+  };
+  health_ready: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Service is ready (database reachable) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HealthResponse"];
+        };
+      };
+      /** @description Database health check failed */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

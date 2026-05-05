@@ -207,8 +207,14 @@ impl Default for OtlpConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GrpcConfig {
+    #[serde(default = "default_grpc_enabled")]
+    pub enabled: bool,
     pub host: String,
     pub port: u16,
+}
+
+fn default_grpc_enabled() -> bool {
+    true
 }
 
 impl AppConfig {
@@ -230,7 +236,9 @@ impl AppConfig {
 
     pub fn validate(&self) -> Result<()> {
         self.rest_addr()?;
-        self.grpc_addr()?;
+        if self.grpc.enabled {
+            self.grpc_addr()?;
+        }
 
         if self.auth.enabled {
             if self.auth.issuer_url.is_empty() {
@@ -337,6 +345,7 @@ mod tests {
                 otlp: OtlpConfig::default(),
             },
             grpc: GrpcConfig {
+                enabled: true,
                 host: "127.0.0.1".to_owned(),
                 port: 50051,
             },

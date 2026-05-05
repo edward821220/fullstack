@@ -14,5 +14,6 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+repo = { path = "../repo", features = ["test-helpers"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 time.workspace = true

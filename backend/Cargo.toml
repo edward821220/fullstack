@@ -52,6 +52,7 @@ tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }
 figment = { version = "0.10", features = ["yaml", "env", "toml"] }
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
+axum-prometheus = "0.10"
 tower = "0.5"
 tower-http = { version = "0.6", features = [
   "cors",
@@ -68,7 +69,9 @@ tonic-health = "0.14"
 tonic-reflection = "0.14"
 tonic-build = "0.14"
 tonic-prost-build = "0.14"
+tonic-prost = "0.14"
 prost = "0.14"
+tokio-stream = "0.1"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

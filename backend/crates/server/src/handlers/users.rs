@@ -15,8 +15,9 @@ use uuid::Uuid;
 
 use crate::audit::{AuditEvent, log_audit_event};
 use crate::middleware::oidc::AuthUser;
-use crate::middleware::{AppState, require_admin, require_manager};
+use crate::middleware::{require_admin, require_manager};
 use crate::problem::ProblemResponse;
+use crate::state::AppState;
 use svc::UserServiceTrait;
 
 #[derive(Debug, Snafu)]

@@ -37,3 +37,22 @@ export async function clientFetch<T>(endpoint: string, schema: z.ZodSchema<T>): 
   const res = await apiClient.get<unknown>(endpoint);
   return parse(res.data, schema);
 }
+
+/** Client-side mutation (POST/PUT/DELETE) with optional Zod validation. */
+export async function clientMutate<T>(
+  endpoint: string,
+  schema: z.ZodSchema<T> | undefined,
+  method: "POST" | "PUT" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const res = await apiClient.request<unknown>({
+    url: endpoint,
+    method,
+    data: body,
+    headers: { "Content-Type": "application/json" },
+  });
+  if (schema) {
+    return parse(res.data, schema);
+  }
+  return res.data as T;
+}

@@ -34,4 +34,5 @@ observability:
     timeout_seconds: 5
 
 grpc:
+  enabled: true
   port: 50051

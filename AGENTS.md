@@ -14,7 +14,8 @@ project-root/
 │       ├── dto/              # Shared DTOs. Request/Response, utoipa ToSchema.
 │       ├── model/            # Domain models (sqlx::FromRow).
 │       ├── migration/        # Database migrations via refinery. Per-DB SQL files.
-│       ├── repo/             # Repository pattern. Trait + PostgresUserRepo impl.
+│       ├── repo/             # Repository pattern. UserRepo seam + Postgres/MSSQL adapters.
+│       │   └── src/user_repo/  # Trait, adapters, adapter-specific tests, test-helpers.
 │       ├── svc/              # Business logic. Depends on repo traits (not impls).
 │       ├── server/           # Axum REST (3001) + tonic gRPC (50051). Combined binary.
 │       └── grpc/             # Standalone gRPC server (optional).
@@ -48,7 +49,7 @@ project-root/
 - **API responses**: Success = raw JSON (no envelope), HTTP 2xx. Error = JSON with `type`/`title`/`status`/`detail` fields (RFC 9457 Problem Details subset), HTTP 4xx/5xx.
 - **Auth**: OIDC Bearer token. JWT validated via JWKS (jsonwebtoken crate, manual discovery or manual endpoints). JIT user provisioning with email domain whitelist and role resolution via `ProvisioningPolicy`.
 - **Authorization**: IdP-driven RBAC. The IdP is the authority for role assignment. On each request with a valid token, the middleware syncs the user's `role`, `display_name`, and `email_verified` from the current OIDC claims. Role is derived from claims via `ProvisioningPolicy::resolve_role()`, which maps well-known role names (admin/administrator/superuser → admin, manager/supervisor → manager) from the configured claim source (`roles` or `groups`). Hierarchical: Admin > Manager > User. Routes: list/get/update require Manager+; create/delete require Admin. When auth is disabled, all requests pass through.
-- **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented.
+- **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented under `repo/src/user_repo/`. Adapter-specific testcontainers tests live in the same file as the adapter (`#[cfg(test)]`). A `test-helpers` feature provides `MockUserRepo` for upstream unit tests.
 - **gRPC**: Port 50051. Service-to-service only. Currently provides `SayHello` and `HealthCheck` as placeholder patterns.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
 
@@ -57,7 +58,7 @@ project-root/
 - **Auth**: next-auth with generic OIDC. JWT session strategy. Auto-redirect to IdP.
 - **API calls**: axios interceptor auto-attaches Bearer token from next-auth session.
 - **Validation**: Zod schemas in `schemas/`. Single source for validation + types.
-- **API types**: Single authority — TypeScript types are derived from the backend OpenAPI spec. Run `pnpm openapi:gen` (frontend) after `cargo run -p server -- gen-openapi > openapi.json` (backend) to regenerate `schema.d.ts` when DTOs change.
+- **API types**: Single authority — TypeScript types are derived from the backend OpenAPI spec. Run `pnpm openapi:gen` (frontend) after `cd backend && cargo run -p server -- gen-openapi > ../docs/openapi.json` to regenerate `schema.d.ts` when DTOs change.
 - **State**: Zustand (UI state), SWR (server cache).
 - **Routing**: Next.js App Router. `(auth)` = public route group (no URL impact), `dashboard/` = protected route segment.
 - **Styling**: Tailwind CSS v4 (CSS-first config).
@@ -150,6 +151,12 @@ mise run check:be check:fe
 This runs the full backend and frontend verification flow via `mise`: Rust/TypeScript format checks, linting, spell check, compile/build validation, and automated tests.
 
 `lefthook` `pre-commit` is intentionally lighter: format/lint/spell-check only. There is no `pre-push` hook by default; full verification belongs in CI and in the final agent validation step above.
+
+## Documentation Discipline
+
+- When modifying architecture, file structure, or domain vocabulary, **always sync `CONTEXT.md`** (or create it if missing). `CONTEXT.md` is the authority for domain language and seam names.
+- When modifying build steps, tooling, or project conventions, **always sync `AGENTS.md`** and `README.md` so future agents do not re-discover the same information.
+- Before reporting task completion, verify that any file/structure changes mentioned in `AGENTS.md` or `README.md` are still accurate.
 
 ## Sensitive Data Policy
 

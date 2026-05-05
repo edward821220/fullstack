@@ -42,10 +42,15 @@ uuid.workspace = true
 clap.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
-tonic-prost = "0.14"
+tonic-prost.workspace = true
 prost.workspace = true
-tokio-stream = "0.1"
-axum-prometheus = "0.10"
+tokio-stream.workspace = true
+axum-prometheus.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+repo = { path = "../repo", features = ["test-helpers"] }
+time = { workspace = true, features = ["macros"] }
 
 [build-dependencies]
 tonic-prost-build.workspace = true

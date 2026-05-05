@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUsers } from "@/hooks/useUsers";
+import { useRole } from "@/hooks/useRole";
+import { deleteUser } from "@/lib/api/users";
 import type { PaginatedUserResponse, User } from "@/lib/api/types";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-TW", {
@@ -27,7 +29,8 @@ function roleVariant(role: string) {
 export function UsersTable({ initialData }: { initialData: PaginatedUserResponse }) {
   const [page, setPage] = useState(initialData.page || 1);
   const [perPage] = useState(initialData.per_page || 8);
-  const { data, error, isLoading } = useUsers(page, perPage, initialData);
+  const { data, error, isLoading, mutate } = useUsers(page, perPage, initialData);
+  const { isAdmin, isManager } = useRole();
 
   const summary = useMemo(() => {
     const users = data?.data ?? [];
@@ -76,7 +79,14 @@ export function UsersTable({ initialData }: { initialData: PaginatedUserResponse
               SWR client cache with server-rendered bootstrap data and backend OpenAPI types.
             </CardDescription>
           </div>
-          <div className="text-sm text-muted-foreground">Page {data?.page ?? page}</div>
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <Button asChild variant="default">
+                <a href="/dashboard/users/new">New User</a>
+              </Button>
+            )}
+            <span className="text-sm text-muted-foreground">Page {data?.page ?? page}</span>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? (
@@ -95,6 +105,7 @@ export function UsersTable({ initialData }: { initialData: PaginatedUserResponse
                     <th className="px-4 py-3 font-medium">Role</th>
                     <th className="px-4 py-3 font-medium">Verified</th>
                     <th className="px-4 py-3 font-medium">Created</th>
+                    <th className="px-4 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border bg-card">
@@ -102,7 +113,19 @@ export function UsersTable({ initialData }: { initialData: PaginatedUserResponse
                     ? Array.from({ length: 5 }, (_, index) => (
                         <LoadingRow key={`loading-${index}`} />
                       ))
-                    : (data?.data ?? []).map((user) => <UserRow key={user.id} user={user} />)}
+                    : (data?.data ?? []).map((user) => (
+                        <UserRow
+                          key={user.id}
+                          isAdmin={isAdmin}
+                          isManager={isManager}
+                          onDelete={async () => {
+                            if (!confirm("Delete this user?")) return;
+                            await deleteUser(user.id);
+                            mutate();
+                          }}
+                          user={user}
+                        />
+                      ))}
                 </tbody>
               </table>
             </div>
@@ -163,11 +186,26 @@ function MetricCard({
   );
 }
 
-function UserRow({ user }: { user: User }) {
+function UserRow({
+  isAdmin,
+  isManager,
+  onDelete,
+  user,
+}: {
+  isAdmin: boolean;
+  isManager: boolean;
+  onDelete: () => void;
+  user: User;
+}) {
   return (
     <tr className="hover:bg-secondary/30">
       <td className="px-4 py-3 align-middle">
-        <div className="font-medium text-foreground">{user.display_name}</div>
+        <a
+          className="font-medium text-foreground hover:underline"
+          href={`/dashboard/users/${user.id}`}
+        >
+          {user.display_name}
+        </a>
       </td>
       <td className="px-4 py-3 align-middle text-muted-foreground">{user.email}</td>
       <td className="px-4 py-3 align-middle">
@@ -180,6 +218,20 @@ function UserRow({ user }: { user: User }) {
       </td>
       <td className="px-4 py-3 align-middle text-muted-foreground">
         {dateFormatter.format(new Date(user.created_at))}
+      </td>
+      <td className="px-4 py-3 align-middle">
+        <div className="flex gap-2">
+          {isManager && (
+            <Button asChild size="sm" variant="outline">
+              <a href={`/dashboard/users/${user.id}/edit`}>Edit</a>
+            </Button>
+          )}
+          {isAdmin && (
+            <Button onClick={onDelete} size="sm" variant="destructive">
+              Delete
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -202,6 +254,9 @@ function LoadingRow() {
       </td>
       <td className="px-4 py-3">
         <Skeleton className="h-5 w-32" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-5 w-24" />
       </td>
     </tr>
   );

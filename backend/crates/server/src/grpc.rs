@@ -6,9 +6,10 @@ use svc::{ProvisioningPolicy, UserService, UserServiceTrait};
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use uuid::Uuid;
 
+use crate::middleware::OidcValidator;
 use crate::middleware::authz::{Role, authorize_role};
 use crate::middleware::oidc::{AuthFailure, AuthUser};
-use crate::middleware::{AppState, OidcValidator};
+use crate::state::AppState;
 
 pub mod proto {
     pub mod users {

@@ -41,12 +41,15 @@ run = [
 [tasks."openapi:gen:be"]
 description = "Generate OpenAPI JSON spec from backend"
 dir = "backend"
-run = "cargo run -p server -- gen-openapi > openapi.json"
+run = "cargo run -p server -- gen-openapi > ../docs/openapi.json"
 
 [tasks."openapi:gen:fe"]
-description = "Convert OpenAPI JSON to TypeScript types"
+description = "Convert OpenAPI JSON to TypeScript types and Zod schemas"
 dir = "frontend"
-run = "pnpm openapi:gen"
+run = [
+  "pnpm openapi:gen:types",
+  "pnpm openapi:gen:zod",
+]
 
 [tasks."openapi:gen"]
 description = "Generate OpenAPI spec from backend and convert to TypeScript types"

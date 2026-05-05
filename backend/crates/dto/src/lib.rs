@@ -35,12 +35,15 @@ impl From<&model::user::User> for UserResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateUserRequest {
+    #[schema(format = Email, min_length = 1, max_length = 100)]
     pub email: String,
+    #[schema(min_length = 1, max_length = 100)]
     pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
+    #[schema(min_length = 1, max_length = 100)]
     pub display_name: Option<String>,
 }
 

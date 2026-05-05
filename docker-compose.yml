@@ -1,4 +1,23 @@
 services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${PG_DB:-fullstack_template}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${PG_USER:-postgres}" ]
+      interval: 5s
+      retries: 5
+    profiles:
+      - postgres
+      - full
+
   # ── MS SQL Server (default) ────────────────────────────────────────────
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -24,22 +43,6 @@ services:
     profiles:
       - mssql
       - full
-
-  # ── PostgreSQL ──────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: ${PG_USER:-postgres}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
-      POSTGRES_DB: ${PG_DB:-fullstack_template}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${PG_USER:-postgres}" ]
-      interval: 5s
-      retries: 5
 
   # ── Dex (local OIDC provider) ──────────────────────────────────────────
   dex:
