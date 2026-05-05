@@ -27,6 +27,13 @@ When naming modules, seams, or concepts during architecture work, use these term
 - **ProblemResponse** — The RFC 9457 Problem Details error response format used across all HTTP APIs.
 - **AuditEvent** — Security-relevant events (auth success/failure, role denied, user created/updated/deleted) emitted for observability.
 
+## Transaction & Type Erasure
+
+- **Transaction** — The transaction seam. `commit()` and `rollback()` methods. Implemented by `PgTransaction` (wraps `sqlx::Transaction<'static>`) and `MssqlTransaction` (dedicated `tiberius::Client` TCP connection). Auto-rollback on drop for both adapters.
+- **AnyUserRepo** — Type-erased enum over `PostgresUserRepo` and `MssqlUserRepo`. Returned by `repo::connect()` and stored in `AppState` to keep server code monomorphic.
+- **AnyTransaction** — Type-erased enum over `PgTransaction` and `MssqlTransaction`. Passed into `_in_tx` methods on `UserRepo`.
+
 ## Test Concepts
 
-- **MockUserRepo** — The canonical test double for `UserRepo`. Provided by the `repo` crate under the `test-helpers` feature. Maintains in-memory state and optional call-spy vectors for orchestration tests.
+- **MockUserRepo** — The canonical test double for `UserRepo`. Provided by the `repo` crate under the `test-helpers` feature. Maintains in-memory state (via `Arc<Mutex<...>>`) and optional call-spy vectors for orchestration tests.
+- **MockTransaction** — In-memory test double for `Transaction`. Supports staged `commit()` and `rollback()` with `committed`/`rolled_back` flags for verifying transaction boundaries in unit tests.

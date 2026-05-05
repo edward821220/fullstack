@@ -1,23 +1,23 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use uuid::Uuid;
 
-use super::{Error, Result, UserRepo};
+use super::{Error, Result, Transaction, UserRepo};
 
 /// An in-memory fake implementation of [`UserRepo`] for testing.
 pub struct MockUserRepo {
-    pub users: Mutex<Vec<User>>,
-    pub identities: Mutex<Vec<UserIdentity>>,
+    pub users: Arc<Mutex<Vec<User>>>,
+    pub identities: Arc<Mutex<Vec<UserIdentity>>>,
 }
 
 impl MockUserRepo {
     pub fn new() -> Self {
         Self {
-            users: Mutex::new(Vec::new()),
-            identities: Mutex::new(Vec::new()),
+            users: Arc::new(Mutex::new(Vec::new())),
+            identities: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -28,8 +28,53 @@ impl Default for MockUserRepo {
     }
 }
 
+impl Clone for MockUserRepo {
+    fn clone(&self) -> Self {
+        Self {
+            users: Arc::clone(&self.users),
+            identities: Arc::clone(&self.identities),
+        }
+    }
+}
+
+pub struct MockTransaction {
+    original_users: Arc<Mutex<Vec<User>>>,
+    original_identities: Arc<Mutex<Vec<UserIdentity>>>,
+    users: Vec<User>,
+    identities: Vec<UserIdentity>,
+}
+
+#[async_trait]
+impl Transaction for MockTransaction {
+    async fn commit(mut self) -> Result<()> {
+        let mut orig_users = self.original_users.lock().unwrap();
+        let mut orig_identities = self.original_identities.lock().unwrap();
+        *orig_users = self.users;
+        *orig_identities = self.identities;
+        Ok(())
+    }
+
+    async fn rollback(self) -> Result<()> {
+        // 丟棄 staged 變更，原始資料不受影響
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl UserRepo for MockUserRepo {
+    type Tx = MockTransaction;
+
+    async fn begin_transaction(&self) -> Result<Self::Tx> {
+        let users = self.users.lock().unwrap().clone();
+        let identities = self.identities.lock().unwrap().clone();
+        Ok(MockTransaction {
+            original_users: Arc::clone(&self.users),
+            original_identities: Arc::clone(&self.identities),
+            users,
+            identities,
+        })
+    }
+
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         Ok(self
             .users
@@ -198,5 +243,77 @@ impl UserRepo for MockUserRepo {
 
     async fn health_check(&self) -> Result<()> {
         Ok(())
+    }
+
+    async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
+        Ok(tx.users.iter().find(|u| u.email == email).cloned())
+    }
+
+    async fn create_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        email: &str,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        if tx.users.iter().any(|u| u.email == email) {
+            return Err(Error::UserAlreadyExists {
+                email: email.to_owned(),
+            });
+        }
+        let now = time::OffsetDateTime::now_utc();
+        let user = User {
+            id: Uuid::new_v4(),
+            email: email.to_owned(),
+            display_name: display_name.to_owned(),
+            role: role.to_owned(),
+            email_verified,
+            created_at: now,
+            updated_at: now,
+        };
+        tx.users.push(user.clone());
+        Ok(user)
+    }
+
+    async fn sync_oidc_attributes_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        id: Uuid,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let u = tx
+            .users
+            .iter_mut()
+            .find(|u| u.id == id)
+            .ok_or(Error::UserNotFound { id })?;
+        u.display_name = display_name.to_owned();
+        u.role = role.to_owned();
+        u.email_verified = email_verified;
+        u.updated_at = time::OffsetDateTime::now_utc();
+        Ok(u.clone())
+    }
+
+    async fn create_identity_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        user_id: Uuid,
+        provider: &str,
+        issuer: &str,
+        external_sub: &str,
+    ) -> Result<UserIdentity> {
+        let now = time::OffsetDateTime::now_utc();
+        let id = UserIdentity {
+            id: Uuid::new_v4(),
+            user_id,
+            provider: provider.to_owned(),
+            issuer: issuer.to_owned(),
+            external_sub: external_sub.to_owned(),
+            created_at: now,
+        };
+        tx.identities.push(id.clone());
+        Ok(id)
     }
 }

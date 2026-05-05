@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 async fn connect_to_database(
     config: &AppConfig,
-) -> Result<Box<dyn repo::UserRepo>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<repo::AnyUserRepo, Box<dyn std::error::Error + Send + Sync>> {
     let mut attempt = 0;
 
     loop {

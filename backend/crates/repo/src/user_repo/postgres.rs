@@ -4,7 +4,8 @@ use model::user_identity::UserIdentity;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{Error, Result, UserRepo};
+use super::{Transaction, UserRepo};
+use crate::{Error, Result};
 
 pub struct PostgresUserRepo {
     pool: sqlx::PgPool,
@@ -13,6 +14,33 @@ pub struct PostgresUserRepo {
 impl PostgresUserRepo {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
+    }
+}
+
+impl Clone for PostgresUserRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+pub struct PgTransaction {
+    inner: sqlx::Transaction<'static, sqlx::Postgres>,
+}
+
+#[async_trait]
+impl Transaction for PgTransaction {
+    async fn commit(mut self) -> Result<()> {
+        self.inner.commit().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })
+    }
+
+    async fn rollback(mut self) -> Result<()> {
+        self.inner.rollback().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })
     }
 }
 
@@ -41,6 +69,15 @@ fn to_identity_pg(row: sqlx::postgres::PgRow) -> UserIdentity {
 
 #[async_trait]
 impl UserRepo for PostgresUserRepo {
+    type Tx = PgTransaction;
+
+    async fn begin_transaction(&self) -> Result<Self::Tx> {
+        let tx = self.pool.begin().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+        Ok(PgTransaction { inner: tx })
+    }
+
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         sqlx::query(
             "SELECT id, email, display_name, role, email_verified, created_at, updated_at FROM users WHERE id = $1",
@@ -272,6 +309,136 @@ impl UserRepo for PostgresUserRepo {
             })?;
         Ok(())
     }
+
+    async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
+        sqlx::query(
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+             FROM users WHERE email = $1 FOR UPDATE",
+        )
+        .bind(email)
+        .map(to_user_pg)
+        .fetch_optional(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })
+    }
+
+    async fn create_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        email: &str,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let now = time::OffsetDateTime::now_utc();
+        let id = Uuid::new_v4();
+
+        sqlx::query(
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(id)
+        .bind(email)
+        .bind(display_name)
+        .bind(role)
+        .bind(email_verified)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database { message: e.to_string() })?;
+
+        let user = sqlx::query(
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+             FROM users WHERE id = $1",
+        )
+        .bind(id)
+        .map(to_user_pg)
+        .fetch_one(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        Ok(user)
+    }
+
+    async fn sync_oidc_attributes_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        id: Uuid,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let now = time::OffsetDateTime::now_utc();
+
+        sqlx::query(
+            "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4
+             WHERE id = $5",
+        )
+        .bind(display_name)
+        .bind(role)
+        .bind(email_verified)
+        .bind(now)
+        .bind(id)
+        .execute(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        sqlx::query(
+            "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+             FROM users WHERE id = $1",
+        )
+        .bind(id)
+        .map(to_user_pg)
+        .fetch_one(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })
+    }
+
+    async fn create_identity_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        user_id: Uuid,
+        provider: &str,
+        issuer: &str,
+        external_sub: &str,
+    ) -> Result<UserIdentity> {
+        let id = Uuid::new_v4();
+        let now = time::OffsetDateTime::now_utc();
+
+        sqlx::query(
+            "INSERT INTO user_identities (id, user_id, provider, issuer, external_sub, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(id)
+        .bind(user_id)
+        .bind(provider)
+        .bind(issuer)
+        .bind(external_sub)
+        .bind(now)
+        .execute(&mut *tx.inner)
+        .await
+        .map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        Ok(UserIdentity {
+            id,
+            user_id,
+            provider: provider.to_owned(),
+            issuer: issuer.to_owned(),
+            external_sub: external_sub.to_owned(),
+            created_at: now,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -279,6 +446,8 @@ mod tests {
     use config::DatabaseConfig;
     use testcontainers::runners::AsyncRunner;
     use testcontainers_modules::postgres::Postgres;
+
+    use super::{Transaction, UserRepo};
 
     fn db_config(port: u16) -> DatabaseConfig {
         DatabaseConfig {
@@ -441,5 +610,45 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(found_user.email, "jit@example.com");
+    }
+
+    #[tokio::test]
+    async fn jit_provision_should_be_atomic_in_postgres() {
+        let container = Postgres::default().start().await.unwrap();
+        let port = container.get_host_port_ipv4(5432).await.unwrap();
+        let config = db_config(port);
+
+        migration::run(&config).await.unwrap();
+
+        let repo = crate::connect(&config).await.unwrap();
+
+        // 使用交易完成完整的 JIT provisioning
+        let mut tx = repo.begin_transaction().await.unwrap();
+        let user = repo
+            .create_in_tx(&mut tx, "jit-tx@example.com", "JIT TX User", "user", true)
+            .await
+            .unwrap();
+        let identity = repo
+            .create_identity_in_tx(
+                &mut tx,
+                user.id,
+                "oidc",
+                "https://accounts.google.com",
+                "google-tx-12345",
+            )
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(identity.user_id, user.id);
+
+        // 驗證兩者都存在
+        let found_user = repo.find_by_id(user.id).await.unwrap();
+        assert!(found_user.is_some());
+        let found_identity = repo
+            .find_identity("oidc", "https://accounts.google.com", "google-tx-12345")
+            .await
+            .unwrap();
+        assert!(found_identity.is_some());
     }
 }

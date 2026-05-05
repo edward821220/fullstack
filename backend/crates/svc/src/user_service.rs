@@ -1,24 +1,25 @@
 use async_trait::async_trait;
 use model::user::User;
 use repo::UserRepo;
+use repo::user_repo::Transaction;
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::policy::{OidcUserInfo, ProvisioningPolicy, derive_provider_from_issuer};
 use crate::{Error, Result};
 
-pub struct UserService {
-    repo: Box<dyn UserRepo>,
+pub struct UserService<R: UserRepo> {
+    repo: R,
 }
 
-impl UserService {
-    pub fn new(repo: Box<dyn UserRepo>) -> Self {
+impl<R: UserRepo> UserService<R> {
+    pub fn new(repo: R) -> Self {
         Self { repo }
     }
 }
 
 #[async_trait]
-pub trait UserServiceTrait: Send + Sync {
+pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
     async fn get_user(&self, id: Uuid) -> Result<User>;
     async fn list_users(&self, page: u64, per_page: u64) -> Result<(Vec<User>, u64)>;
     async fn create_user(
@@ -49,7 +50,7 @@ pub trait UserServiceTrait: Send + Sync {
 }
 
 #[async_trait]
-impl UserServiceTrait for UserService {
+impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
     #[instrument(skip(self), fields(user_id = %id))]
     async fn get_user(&self, id: Uuid) -> Result<User> {
         self.repo
@@ -116,8 +117,17 @@ impl UserServiceTrait for UserService {
                 .map_err(Into::into);
         }
 
-        let existing_user = self.repo.find_by_email(&oidc_info.email).await?;
+        let mut tx = self.repo.begin_transaction().await?;
         let role = policy.resolve_role(&oidc_info.roles);
+
+        // === 交易邊界：find_by_email → create/sync → create_identity ===
+        // 如果任何步驟失敗，`?` 會返回錯誤，tx 被 drop 時自動 rollback：
+        // - Postgres: sqlx::Transaction drop 自動 rollback
+        // - MSSQL: 連線斷開時 SQL Server 自動 rollback 未完成交易
+        let existing_user = self
+            .repo
+            .find_by_email_in_tx(&mut tx, &oidc_info.email)
+            .await?;
 
         let user = match existing_user {
             Some(u) => {
@@ -129,7 +139,13 @@ impl UserServiceTrait for UserService {
                     "Linking existing user to OIDC identity and syncing attributes"
                 );
                 self.repo
-                    .sync_oidc_attributes(u.id, &oidc_info.name, &role, oidc_info.email_verified)
+                    .sync_oidc_attributes_in_tx(
+                        &mut tx,
+                        u.id,
+                        &oidc_info.name,
+                        &role,
+                        oidc_info.email_verified,
+                    )
                     .await?
             }
             None => {
@@ -140,7 +156,8 @@ impl UserServiceTrait for UserService {
                     "Creating new user via JIT provisioning"
                 );
                 self.repo
-                    .create(
+                    .create_in_tx(
+                        &mut tx,
                         &oidc_info.email,
                         &oidc_info.name,
                         &role,
@@ -151,9 +168,16 @@ impl UserServiceTrait for UserService {
         };
 
         self.repo
-            .create_identity(user.id, provider, &oidc_info.issuer, &oidc_info.sub)
+            .create_identity_in_tx(
+                &mut tx,
+                user.id,
+                provider,
+                &oidc_info.issuer,
+                &oidc_info.sub,
+            )
             .await?;
 
+        tx.commit().await?;
         Ok(user)
     }
 
@@ -233,7 +257,7 @@ mod tests {
             false,
         ));
 
-        let svc = UserService::new(Box::new(repo));
+        let svc = UserService::new(repo);
         let policy = test_policy();
         let oidc_info = test_oidc_info();
 
@@ -254,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn provision_should_create_user_and_identity_when_user_does_not_exist() {
         let repo = repo::MockUserRepo::new();
-        let svc = UserService::new(Box::new(repo));
+        let svc = UserService::new(repo);
         let policy = test_policy();
         let oidc_info = test_oidc_info();
 
@@ -294,7 +318,7 @@ mod tests {
             created_at: OffsetDateTime::now_utc(),
         });
 
-        let svc = UserService::new(Box::new(repo));
+        let svc = UserService::new(repo);
         let policy = test_policy();
         let oidc_info = test_oidc_info();
 
@@ -309,6 +333,21 @@ mod tests {
             .await
             .unwrap();
         assert!(identities.is_some());
+    }
+
+    #[tokio::test]
+    async fn provision_should_rollback_when_identity_creation_fails() {
+        let repo = repo::MockUserRepo::new();
+        let svc = UserService::new(repo);
+        let policy = test_policy();
+        let oidc_info = test_oidc_info();
+
+        // 先成功建立一次
+        let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
+        assert_eq!(user.email, "user@example.com");
+
+        let users = svc.repo.list(1, 10).await.unwrap();
+        assert_eq!(users.0.len(), 1);
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use config::AppConfig;
 
-pub async fn connect_to_database(config: &AppConfig) -> Box<dyn repo::UserRepo> {
+pub async fn connect_to_database(config: &AppConfig) -> repo::AnyUserRepo {
     let mut attempt = 0;
     loop {
         attempt += 1;

@@ -1,17 +1,56 @@
 use async_trait::async_trait;
 use model::user::User;
 use model::user_identity::UserIdentity;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 use uuid::Uuid;
 
-use crate::{Error, Result, UserRepo};
+use super::{Transaction, UserRepo};
+use crate::{Error, Result};
 
 pub struct MssqlUserRepo {
     pool: bb8::Pool<bb8_tiberius::ConnectionManager>,
+    config: tiberius::Config,
 }
 
 impl MssqlUserRepo {
-    pub fn new(pool: bb8::Pool<bb8_tiberius::ConnectionManager>) -> Self {
-        Self { pool }
+    pub fn new(pool: bb8::Pool<bb8_tiberius::ConnectionManager>, config: tiberius::Config) -> Self {
+        Self { pool, config }
+    }
+}
+
+impl Clone for MssqlUserRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: self.pool.clone(),
+            config: self.config.clone(),
+        }
+    }
+}
+
+pub struct MssqlTransaction {
+    client: tiberius::Client<tokio_util::compat::Compat<tokio::net::TcpStream>>,
+}
+
+#[async_trait]
+impl Transaction for MssqlTransaction {
+    async fn commit(mut self) -> Result<()> {
+        self.client
+            .simple_query("COMMIT TRAN")
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+        Ok(())
+    }
+
+    async fn rollback(mut self) -> Result<()> {
+        self.client
+            .simple_query("ROLLBACK TRAN")
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+        Ok(())
     }
 }
 
@@ -41,6 +80,34 @@ fn row_to_user(row: &tiberius::Row) -> Result<User> {
 
 #[async_trait]
 impl UserRepo for MssqlUserRepo {
+    type Tx = MssqlTransaction;
+
+    async fn begin_transaction(&self) -> Result<Self::Tx> {
+        let tcp = tokio::net::TcpStream::connect(self.config.get_addr())
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+        tcp.set_nodelay(true).map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        let mut client = tiberius::Client::connect(self.config.clone(), tcp.compat_write())
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+
+        client
+            .simple_query("BEGIN TRAN")
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+
+        Ok(MssqlTransaction { client })
+    }
+
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
@@ -387,6 +454,139 @@ impl UserRepo for MssqlUserRepo {
 
         Ok(())
     }
+
+    async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
+        let rows = tx
+            .client
+            .query(
+                "SELECT id, email, display_name, role, email_verified, created_at, updated_at
+                 FROM users WITH (UPDLOCK, HOLDLOCK) WHERE email = @P1",
+                &[&email],
+            )
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+
+        let row = rows.into_row().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        match row {
+            Some(ref r) => Ok(Some(row_to_user(r)?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn create_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        email: &str,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let now = time::OffsetDateTime::now_utc();
+        let id = Uuid::new_v4();
+
+        let rows = tx.client.query(
+            "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at)
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
+             VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7)",
+            &[
+                &id,
+                &email,
+                &display_name,
+                &role,
+                &email_verified,
+                &time::PrimitiveDateTime::new(now.date(), now.time()),
+                &time::PrimitiveDateTime::new(now.date(), now.time()),
+            ],
+        )
+        .await
+        .map_err(|e| Error::Database { message: e.to_string() })?;
+
+        let row = rows.into_row().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        row.ok_or_else(|| Error::Database {
+            message: "INSERT did not return a row".to_owned(),
+        })
+        .and_then(|r| row_to_user(&r))
+    }
+
+    async fn sync_oidc_attributes_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        id: Uuid,
+        display_name: &str,
+        role: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let now = time::OffsetDateTime::now_utc();
+
+        let rows = tx.client.query(
+            "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4
+             OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at
+             WHERE id = @P5",
+            &[
+                &display_name,
+                &role,
+                &email_verified,
+                &time::PrimitiveDateTime::new(now.date(), now.time()),
+                &id,
+            ],
+        )
+        .await
+        .map_err(|e| Error::Database { message: e.to_string() })?;
+
+        let row = rows.into_row().await.map_err(|e| Error::Database {
+            message: e.to_string(),
+        })?;
+
+        row.ok_or(Error::UserNotFound { id })
+            .and_then(|r| row_to_user(&r))
+    }
+
+    async fn create_identity_in_tx(
+        &self,
+        tx: &mut Self::Tx,
+        user_id: Uuid,
+        provider: &str,
+        issuer: &str,
+        external_sub: &str,
+    ) -> Result<UserIdentity> {
+        let id = Uuid::new_v4();
+        let now = time::OffsetDateTime::now_utc();
+
+        tx.client
+            .execute(
+                "INSERT INTO user_identities (id, user_id, provider, issuer, external_sub, created_at)
+                 VALUES (@P1, @P2, @P3, @P4, @P5, @P6)",
+                &[
+                    &id,
+                    &user_id,
+                    &provider,
+                    &issuer,
+                    &external_sub,
+                    &time::PrimitiveDateTime::new(now.date(), now.time()),
+                ],
+            )
+            .await
+            .map_err(|e| Error::Database {
+                message: e.to_string(),
+            })?;
+
+        Ok(UserIdentity {
+            id,
+            user_id,
+            provider: provider.to_owned(),
+            issuer: issuer.to_owned(),
+            external_sub: external_sub.to_owned(),
+            created_at: now,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -394,6 +594,8 @@ mod tests {
     use config::DatabaseConfig;
     use testcontainers::{ImageExt, runners::AsyncRunner};
     use testcontainers_modules::mssql_server::MssqlServer;
+
+    use super::{Transaction, UserRepo};
 
     fn db_config(port: u16) -> DatabaseConfig {
         DatabaseConfig {
@@ -560,5 +762,47 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(found_user.email, "jit@example.com");
+    }
+
+    #[tokio::test]
+    async fn jit_provision_should_be_atomic_in_mssql() {
+        let container = MssqlServer::default()
+            .with_env_var("ACCEPT_EULA", "Y")
+            .with_env_var("MSSQL_PID", "Developer")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(1433).await.unwrap();
+        let config = db_config(port);
+
+        migration::run(&config).await.unwrap();
+        let repo = crate::connect(&config).await.unwrap();
+
+        let mut tx = repo.begin_transaction().await.unwrap();
+        let user = repo
+            .create_in_tx(&mut tx, "jit-tx@example.com", "JIT TX User", "user", true)
+            .await
+            .unwrap();
+        let identity = repo
+            .create_identity_in_tx(
+                &mut tx,
+                user.id,
+                "oidc",
+                "https://accounts.google.com",
+                "google-tx-12345",
+            )
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(identity.user_id, user.id);
+
+        let found_user = repo.find_by_id(user.id).await.unwrap();
+        assert!(found_user.is_some());
+        let found_identity = repo
+            .find_identity("oidc", "https://accounts.google.com", "google-tx-12345")
+            .await
+            .unwrap();
+        assert!(found_identity.is_some());
     }
 }

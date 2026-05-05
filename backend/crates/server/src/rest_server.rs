@@ -4,6 +4,8 @@ use std::time::Duration;
 use axum::{Router, middleware as axum_middleware, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
 use config::AppConfig;
+use repo::AnyUserRepo;
+use svc::UserService;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -22,10 +24,10 @@ use crate::state::AppState;
 
 pub async fn serve_rest(
     config: AppConfig,
-    repo: Box<dyn repo::UserRepo>,
+    repo: AnyUserRepo,
     addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let svc = Arc::new(svc::UserService::new(repo));
+    let svc = Arc::new(UserService::new(repo));
     let oidc_validator = Arc::new(OidcValidator::new(config.auth.clone()));
 
     let provisioning =

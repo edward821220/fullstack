@@ -19,4 +19,7 @@ pub enum Error {
         provider: String,
         external_sub: String,
     },
+
+    #[snafu(display("Transaction error: {message}"))]
+    Transaction { message: String },
 }

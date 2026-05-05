@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use config::AppConfig;
 use dto::UserResponse;
+use repo::AnyUserRepo;
 use svc::{ProvisioningPolicy, UserService, UserServiceTrait};
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use uuid::Uuid;
@@ -119,7 +120,7 @@ impl UsersService for UsersGrpcService {
 
 pub async fn serve(
     config: AppConfig,
-    repo: Box<dyn repo::UserRepo>,
+    repo: AnyUserRepo,
     addr: SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let svc = Arc::new(UserService::new(repo));

@@ -26,7 +26,9 @@ fn test_state() -> Arc<AppState> {
         danger_accept_invalid_certs: false,
     };
     let oidc = Arc::new(OidcValidator::new(cfg));
-    let svc = Arc::new(UserService::new(Box::new(repo::MockUserRepo::new())));
+    let svc = Arc::new(UserService::new(repo::AnyUserRepo::Mock(
+        repo::MockUserRepo::new(),
+    )));
     let provisioning = ProvisioningPolicy::new(vec![], "user".to_owned());
     Arc::new(AppState {
         svc,

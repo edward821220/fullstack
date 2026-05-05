@@ -2,11 +2,12 @@ use std::time::Duration;
 
 use config::DatabaseConfig;
 
+use crate::user_repo::AnyUserRepo;
 use crate::user_repo::mssql::MssqlUserRepo;
 use crate::user_repo::postgres::PostgresUserRepo;
-use crate::{Error, Result, UserRepo};
+use crate::{Error, Result};
 
-pub async fn connect(config: &DatabaseConfig) -> Result<Box<dyn UserRepo>> {
+pub async fn connect(config: &DatabaseConfig) -> Result<AnyUserRepo> {
     use config::DatabaseDriver;
 
     match config.driver() {
@@ -20,13 +21,13 @@ pub async fn connect(config: &DatabaseConfig) -> Result<Box<dyn UserRepo>> {
                     message: e.to_string(),
                 })?;
 
-            Ok(Box::new(PostgresUserRepo::new(pool)))
+            Ok(AnyUserRepo::Postgres(PostgresUserRepo::new(pool)))
         }
         DatabaseDriver::Mssql => {
             let tiberius_config = config.to_tiberius_config().map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-            let mgr = bb8_tiberius::ConnectionManager::new(tiberius_config);
+            let mgr = bb8_tiberius::ConnectionManager::new(tiberius_config.clone());
             let pool = bb8::Pool::builder()
                 .max_size(config.max_connections)
                 .build(mgr)
@@ -35,7 +36,10 @@ pub async fn connect(config: &DatabaseConfig) -> Result<Box<dyn UserRepo>> {
                     message: e.to_string(),
                 })?;
 
-            Ok(Box::new(MssqlUserRepo::new(pool)))
+            Ok(AnyUserRepo::Mssql(MssqlUserRepo::new(
+                pool,
+                tiberius_config,
+            )))
         }
     }
 }

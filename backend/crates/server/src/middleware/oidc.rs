@@ -16,6 +16,7 @@ use crate::audit::{AuditEvent, log_audit_event};
 use crate::problem::ProblemResponse;
 use crate::state::AppState;
 use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
+use repo::UserRepo;
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
 
 #[derive(Debug, Clone)]
@@ -163,10 +164,10 @@ impl OidcValidator {
         self.config.enabled
     }
 
-    pub async fn authenticate_token(
+    pub async fn authenticate_token<R: UserRepo>(
         &self,
         token: &str,
-        svc: &UserService,
+        svc: &UserService<R>,
         provisioning: &ProvisioningPolicy,
     ) -> Result<AuthUser, AuthFailure> {
         let jwks = self.get_jwks().await.map_err(|e| {
@@ -650,7 +651,7 @@ Ayt5d8YaALp3owVyEfJ3Uok=
         let validator = OidcValidator::with_client(config, client);
 
         let repo = MockUserRepo::new();
-        let svc = UserService::new(Box::new(repo));
+        let svc = UserService::new(repo);
         let policy = ProvisioningPolicy::new(vec![], "user".to_owned());
 
         // Build a token with exp so validation passes.
