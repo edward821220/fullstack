@@ -1,19 +1,16 @@
-import { z } from "zod/v4";
+// Runtime-validation seam: only schemas that need transforms live here.
+// For everything else, import directly from @/lib/api/gen/zod.gen.ts or
+// @/lib/api/gen/types.gen.ts.
 
-// Re-export auto-generated Zod schemas from OpenAPI spec.
-// Run `pnpm openapi:gen` (or `mise run openapi:gen`) after backend DTO changes.
-import { schemas as generated } from "@/lib/api/schema.zod";
+import { zPaginatedUserResponse, zUpdateUserRequest } from "@/lib/api/gen/zod.gen";
 
-// ── Zod Schemas (generated from OpenAPI) ────────────────────────────────────
+/** Partial variant for update forms. */
+export const updateUserSchema = zUpdateUserRequest.partial();
 
-export const userResponseSchema = generated.UserResponse;
-export const paginatedUserResponseSchema = generated.PaginatedUserResponse;
-export const createUserSchema = generated.CreateUserRequest;
-export const updateUserSchema = generated.UpdateUserRequest.partial();
-
-// ── Inferred Types ───────────────────────────────────────────────────────────
-
-export type UserResponse = z.infer<typeof userResponseSchema>;
-export type PaginatedUserResponse = z.infer<typeof paginatedUserResponseSchema>;
-export type CreateUserInput = z.infer<typeof createUserSchema>;
-export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+/** Transforms int64 (bigint) → number to match frontend expectations. */
+export const paginatedUserResponseSchema = zPaginatedUserResponse.transform((data) => ({
+  data: data.data,
+  page: Number(data.page),
+  per_page: Number(data.per_page),
+  total: Number(data.total),
+}));

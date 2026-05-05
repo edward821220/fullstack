@@ -1,37 +1,32 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/config";
 import type { z } from "zod/v4";
-import { parse } from "@/lib/api/fetcher";
+import { parse } from "@/lib/api/parse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
-
 const BACKEND_INTERNAL = process.env.BACKEND_INTERNAL_URL ?? API_BASE;
 
-/**
- * Get the access token from the server-side session.
- * Use this in Server Components, Route Handlers, and Server Actions.
- */
+/** Get the access token from the server-side session. */
 export async function getServerAccessToken(): Promise<string | undefined> {
   const session = await getServerSession(authOptions);
   return session?.accessToken ?? undefined;
 }
 
-/**
- * Server-side API caller that auto-attaches the Bearer token from next-auth session.
- * Use in Server Components for direct backend calls without client-side fetching.
- *
- * @example
- * ```ts
- * const users = await serverGet("/users?page=1&per_page=8", paginatedUserResponseSchema);
- * ```
- */
-export async function serverGet<T>(endpoint: string, schema: z.ZodSchema<T>): Promise<T> {
-  const accessToken = await getServerAccessToken();
+async function resolveToken(accessToken?: string): Promise<string | undefined> {
+  return accessToken ?? (await getServerAccessToken());
+}
 
+/** Server-side GET with Zod validation and optional explicit token. */
+export async function get<T>(
+  endpoint: string,
+  schema: z.ZodSchema<T>,
+  accessToken?: string,
+): Promise<T> {
+  const token = await resolveToken(accessToken);
   const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
     cache: "no-store",
     headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       "Content-Type": "application/json",
     },
   });
@@ -44,36 +39,85 @@ export async function serverGet<T>(endpoint: string, schema: z.ZodSchema<T>): Pr
   return parse(await response.json(), schema);
 }
 
-/**
- * Server-side mutation caller for POST/PUT/DELETE with auto-attached Bearer token.
- * Use in Server Actions or Route Handlers.
- */
-export async function serverMutate<T>(
-  method: "POST" | "PUT" | "DELETE",
+/** Server-side POST with Zod validation and optional explicit token. */
+export async function post<T>(
   endpoint: string,
   body: unknown,
   schema: z.ZodSchema<T>,
+  accessToken?: string,
 ): Promise<T> {
-  const accessToken = await getServerAccessToken();
-
+  const token = await resolveToken(accessToken);
   const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
-    method,
+    method: "POST",
     cache: "no-store",
     headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       "Content-Type": "application/json",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Server ${method} ${endpoint} failed (${response.status}): ${errorBody}`);
+    throw new Error(`Server POST ${endpoint} failed (${response.status}): ${errorBody}`);
+  }
+
+  return parse(await response.json(), schema);
+}
+
+/** Server-side PUT with Zod validation and optional explicit token. */
+export async function put<T>(
+  endpoint: string,
+  body: unknown,
+  schema: z.ZodSchema<T>,
+  accessToken?: string,
+): Promise<T> {
+  const token = await resolveToken(accessToken);
+  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+    method: "PUT",
+    cache: "no-store",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Server PUT ${endpoint} failed (${response.status}): ${errorBody}`);
+  }
+
+  return parse(await response.json(), schema);
+}
+
+/** Server-side DELETE with optional Zod validation and optional explicit token. */
+export async function del<T>(
+  endpoint: string,
+  schema: z.ZodSchema<T> | undefined,
+  accessToken?: string,
+): Promise<T> {
+  const token = await resolveToken(accessToken);
+  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Server DELETE ${endpoint} failed (${response.status}): ${errorBody}`);
   }
 
   if (response.status === 204) {
     return undefined as unknown as T;
   }
 
-  return parse(await response.json(), schema);
+  if (schema) {
+    return parse(await response.json(), schema);
+  }
+  return (await response.json()) as T;
 }

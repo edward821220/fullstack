@@ -30,6 +30,18 @@ pub enum UsersError {
     Internal { source: svc::Error },
 }
 
+impl From<svc::Error> for UsersError {
+    fn from(source: svc::Error) -> Self {
+        match &source {
+            svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
+            svc::Error::InvalidInput { message } => UsersError::InvalidInput {
+                message: message.clone(),
+            },
+            _ => UsersError::Internal { source },
+        }
+    }
+}
+
 impl axum::response::IntoResponse for UsersError {
     fn into_response(self) -> axum::response::Response {
         let (status, detail) = match &self {
@@ -112,11 +124,7 @@ async fn list_users(
         });
     }
 
-    let (users, total) = state
-        .svc
-        .list_users(page, per_page)
-        .await
-        .map_err(|e| UsersError::Internal { source: e })?;
+    let (users, total) = state.svc.list_users(page, per_page).await?;
 
     let data: Vec<UserResponse> = users.iter().map(to_response).collect();
 
@@ -150,10 +158,7 @@ async fn get_user(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>, UsersError> {
-    let user = state.svc.get_user(id).await.map_err(|e| match &e {
-        svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
-        _ => UsersError::Internal { source: e },
-    })?;
+    let user = state.svc.get_user(id).await?;
 
     Ok(Json(to_response(&user)))
 }
@@ -182,13 +187,7 @@ async fn create_user(
     let user = state
         .svc
         .create_user(&req.email, &req.display_name, "user", false)
-        .await
-        .map_err(|e| match &e {
-            svc::Error::InvalidInput { message } => UsersError::InvalidInput {
-                message: message.clone(),
-            },
-            _ => UsersError::Internal { source: e },
-        })?;
+        .await?;
 
     if let Some(Extension(actor)) = actor {
         log_audit_event(&AuditEvent::UserCreated {
@@ -229,11 +228,7 @@ async fn update_user(
     let user = state
         .svc
         .update_user(id, req.display_name.as_deref())
-        .await
-        .map_err(|e| match &e {
-            svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
-            _ => UsersError::Internal { source: e },
-        })?;
+        .await?;
 
     if let Some(Extension(actor)) = actor {
         log_audit_event(&AuditEvent::UserUpdated {
@@ -268,10 +263,7 @@ async fn delete_user(
     actor: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, UsersError> {
-    state.svc.delete_user(id).await.map_err(|e| match &e {
-        svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
-        _ => UsersError::Internal { source: e },
-    })?;
+    state.svc.delete_user(id).await?;
 
     if let Some(Extension(actor)) = actor {
         log_audit_event(&AuditEvent::UserDeleted {

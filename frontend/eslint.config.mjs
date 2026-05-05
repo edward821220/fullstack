@@ -5,7 +5,14 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: [".next/", "node_modules/", "out/", "pnpm-lock.yaml", "src/lib/api/schema.zod.ts"],
+    ignores: [
+      ".next/",
+      "node_modules/",
+      "out/",
+      "pnpm-lock.yaml",
+      "src/lib/api/schema.zod.ts",
+      "src/components/ui/",
+    ],
   },
   {
     files: ["**/*.ts", "**/*.tsx"],

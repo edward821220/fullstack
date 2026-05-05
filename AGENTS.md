@@ -34,6 +34,9 @@ project-root/
 │       ├── hooks/            # SWR data fetching hooks
 │       ├── stores/           # Zustand stores (UI state)
 │       └── styles/           # Tailwind CSS globals
+├── docs/
+│   ├── adr/                  # Architecture Decision Records
+│   └── openapi.json          # Generated OpenAPI spec (source of truth for FE types)
 ├── proto/                    # gRPC protobuf definitions (language-agnostic)
 ├── docker/                   # Dockerfiles
 └── docker-compose.yml        # Local dev environment
@@ -63,82 +66,11 @@ project-root/
 - **Routing**: Next.js App Router. `(auth)` = public route group (no URL impact), `dashboard/` = protected route segment.
 - **Styling**: Tailwind CSS v4 (CSS-first config).
 
-## Rust Code Style
+## Code Style
 
-### Borrowing & Ownership
-- Prefer `&T` over `.clone()` unless ownership is required.
-- Use `&str` over `String`, `&[T]` over `Vec<T>` in function parameters.
-- Small `Copy` types (≤24 bytes) may be passed by value.
+Backend Rust code style follows the local **`/rust-best-practices`** skill (Apollo GraphQL handbook). Use it when writing, reviewing, or refactoring Rust — covers ownership, error handling (`Result`/`?`), performance, clippy lints, testing, generics, and type-state patterns.
 
-### Error Handling
-- Return `Result<T, E>` — never `unwrap()`/`expect()` outside tests.
-- Use `?` operator. No manual match chains for error propagation.
-- Use `snafu` for per-layer error enums (`#[derive(Snafu)]` + context selectors).
-- Do not silently swallow errors with `if let Err(_) =`.
-
-### Performance
-- Avoid cloning in loops. Use `.iter()` instead of `.into_iter()` for `Copy` types.
-- Prefer iterators over manual loops. Avoid intermediate `.collect()`.
-- Run `cargo clippy -- -D clippy::perf` for performance hints.
-
-### Linting
-Always run: `cargo clippy --all-targets --all-features -- -D warnings`
-
-Key lints: `redundant_clone`, `large_enum_variant`, `needless_collect`.
-Use `#[expect(clippy::lint)]` (not `#[allow]`) with justification comment.
-
-### Testing
-- Test naming: `process_should_return_error_when_input_empty()`.
-- One assertion per test.
-- Doc tests (`///`) for public API examples.
-
-### Imports
-Group: `std` → external crates → `crate` → `super`/`self`.
-Separate groups with blank lines.
-
-### Comments
-- No comments on self-documenting code. Add comments only for non-obvious business logic.
-- `//` = why (safety, workarounds, design rationale).
-- `///` = what + how (public API docs).
-- Every TODO needs an issue number: `// TODO(#42): ...`
-
-### Generics & Dispatch
-- Prefer generics (static dispatch). Use `dyn Trait` only for heterogeneous collections.
-- Box at API boundaries, not internally.
-
-## TypeScript Code Style
-
-### Imports
-- Use `import type` for type-only imports.
-- Group: React/Next → external libs → `@/` aliases → relative.
-
-### Components
-- Prefer Server Components. Add `"use client"` only when needed (hooks, events).
-- Extract expensive work into memoized components (`React.memo`).
-- Extract static JSX outside the component body.
-- Use ternary (`a ? <B /> : null`) for conditional rendering, not `&&`.
-
-### Data Fetching
-- Parallelize independent fetches with `Promise.all()`. No waterfalls.
-- Use SWR for client-side fetch dedup and caching.
-- Defer await into branches where actually consumed.
-- Start promises early, await late in API routes.
-
-### Re-render Optimization
-- Use functional `setState(prev => ...)` for stable callbacks.
-- Pass function to `useState()` for expensive initial values (`useState(() => heavy())`).
-- Use `useTransition()` / `startTransition()` for non-urgent updates.
-- Subscribe to derived booleans, not raw state values.
-
-### Bundle Size
-- Use `next/dynamic` with `ssr: false` for heavy client-only components.
-- Import directly from module paths — avoid barrel file re-exports.
-- Defer third-party analytics/logging loads until after hydration.
-
-### Rendering
-- Use `content-visibility: auto` for long lists.
-- Reduce SVG coordinate precision (≤2 decimal places).
-- Group DOM CSS changes via class toggling, not individual style writes.
+Frontend TypeScript / React / Next.js code style follows the local **`/react-best-practices`** skill (Vercel Labs). Use it when writing, reviewing, or refactoring frontend code — covers Server Components, data fetching, re-render optimization, bundle size, Suspense boundaries, and caching.
 
 ## Code Quality
 
@@ -167,3 +99,30 @@ This runs the full backend and frontend verification flow via `mise`: Rust/TypeS
 ## Commits
 
 Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`. Enforced by `committed` via lefthook `commit-msg` hook.
+
+## Local Agent Skills
+
+The following skills live under `.agents/skills/` and are available via slash-command or auto-trigger. Invoke them explicitly when the situation matches.
+
+### Code Style
+
+- **`/rust-best-practices`** — Rust ownership, error handling, performance, clippy, testing, generics, type-state. Use when writing, reviewing, or refactoring backend code.
+- **`/react-best-practices`** — React/Next.js Server Components, data fetching, re-render optimization, bundle size, Suspense, caching. Use when writing, reviewing, or refactoring frontend code.
+
+### Engineering
+
+- **`/diagnose`** — Hard bugs, performance regressions, "something is broken/failing". Follows reproduce → minimise → hypothesise → instrument → fix → regression-test. Use **instead of ad-hoc debugging**.
+- **`/grill-with-docs`** — Before a big refactor or plan, challenge it against `CONTEXT.md` and `docs/adr/` domain model. Use when the change touches architecture or vocabulary.
+- **`/improve-codebase-architecture`** — When the codebase feels shallow, seams are wrong, or a bug revealed missing testability. Uses `CONTEXT.md` + `docs/adr/` as authority.
+- **`/setup-matt-pocock-skills`** — One-time scaffold for issue-tracker config, triage labels, domain doc layout. Only run when bootstrapping a brand-new repo from this template.
+- **`/tdd`** — Building a feature or fixing a bug test-first. Red-green-refactor, one vertical slice at a time.
+- **`/to-issues`** — Turn a plan/spec/PRD into independently-grabbable GitHub issues using vertical slices. Use before starting a multi-issue milestone.
+- **`/to-prd`** — Turn current conversation context into a PRD and submit it as a GitHub issue. Use when a feature idea is fuzzy but needs scoping.
+- **`/triage`** — Triage incoming issues through a state machine of triage roles. Use when issue backlog is unruly or new bugs arrive without labels/scope.
+- **`/zoom-out`** — Broader context on an unfamiliar code section. Use when you (the agent) are lost in a module and need high-level orientation.
+
+### Productivity
+
+- **`/caveman`** — Ultra-compressed communication. Use when the user asks for less tokens, "be brief", "caveman mode".
+- **`/grill-me`** — Interview the user relentlessly about a plan until every branch is resolved. Use when the user's requirements are ambiguous or contradictory.
+- **`/write-a-skill`** — Create a new local skill with proper structure. Use when the user wants to add a reusable workflow to `.agents/skills/`.

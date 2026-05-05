@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { DashboardOverview } from "@/components/features/users/dashboard-overview";
 import { UsersTable } from "@/components/features/users/users-table";
-import { fetchUsersPage } from "@/lib/api/users";
+import { getUsersPage } from "@/lib/api/users/server";
 import { authOptions } from "@/lib/auth/config";
 
 export default async function DashboardPage() {
@@ -12,7 +12,7 @@ export default async function DashboardPage() {
     redirect("/api/auth/signin/oidc?callbackUrl=/dashboard");
   }
 
-  const initialUsers = await fetchUsersPage(session.accessToken, 1, 8);
+  const initialUsers = await getUsersPage(1, 8, session.accessToken);
 
   return (
     <div className="space-y-8">

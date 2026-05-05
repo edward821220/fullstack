@@ -5,17 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { authOptions } from "@/lib/auth/config";
-import { serverFetch } from "@/lib/api/fetcher";
-import { userResponseSchema } from "@/schemas";
-import type { UserResponse } from "@/schemas";
-
-async function fetchUser(accessToken: string, id: string): Promise<UserResponse | null> {
-  try {
-    return await serverFetch(`/users/${id}`, userResponseSchema, accessToken);
-  } catch {
-    return null;
-  }
-}
+import { getUser } from "@/lib/api/users/server";
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -25,7 +15,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
 
   const { id } = await params;
   const accessToken = session.accessToken ?? "";
-  const user = await fetchUser(accessToken, id);
+  const user = await getUser(id, accessToken).catch(() => null);
   if (!user) {
     notFound();
   }

@@ -3,17 +3,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { UserForm } from "@/components/features/users/user-form";
 import { authOptions } from "@/lib/auth/config";
-import { serverFetch } from "@/lib/api/fetcher";
-import { userResponseSchema } from "@/schemas";
-import type { UserResponse } from "@/schemas";
-
-async function fetchUser(accessToken: string, id: string): Promise<UserResponse | null> {
-  try {
-    return await serverFetch(`/users/${id}`, userResponseSchema, accessToken);
-  } catch {
-    return null;
-  }
-}
+import { getUser } from "@/lib/api/users/server";
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -23,7 +13,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
 
   const { id } = await params;
   const accessToken = session.accessToken ?? "";
-  const user = await fetchUser(accessToken, id);
+  const user = await getUser(id, accessToken).catch(() => null);
   if (!user) {
     notFound();
   }

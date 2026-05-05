@@ -28,6 +28,17 @@ fn to_user_pg(row: sqlx::postgres::PgRow) -> User {
     }
 }
 
+fn to_identity_pg(row: sqlx::postgres::PgRow) -> UserIdentity {
+    UserIdentity {
+        id: row.get("id"),
+        user_id: row.get("user_id"),
+        provider: row.get("provider"),
+        issuer: row.get("issuer"),
+        external_sub: row.get("external_sub"),
+        created_at: row.get("created_at"),
+    }
+}
+
 #[async_trait]
 impl UserRepo for PostgresUserRepo {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
@@ -177,13 +188,14 @@ impl UserRepo for PostgresUserRepo {
         issuer: &str,
         external_sub: &str,
     ) -> Result<Option<UserIdentity>> {
-        sqlx::query_as::<_, UserIdentity>(
+        sqlx::query(
             "SELECT id, user_id, provider, issuer, external_sub, created_at
              FROM user_identities WHERE provider = $1 AND issuer = $2 AND external_sub = $3",
         )
         .bind(provider)
         .bind(issuer)
         .bind(external_sub)
+        .map(to_identity_pg)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Database {

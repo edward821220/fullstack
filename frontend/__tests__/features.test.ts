@@ -6,20 +6,31 @@ vi.mock("next-auth/react", () => ({
   getSession: vi.fn().mockResolvedValue({ accessToken: "test-token" }),
 }));
 
+vi.mock("next-auth", () => ({
+  getServerSession: vi.fn().mockResolvedValue({ accessToken: "server-token" }),
+}));
+
 vi.mock("@/lib/api/client", () => ({
   default: {
     get: vi.fn(),
-    request: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
     interceptors: { request: { use: vi.fn() } },
   },
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  del: vi.fn(),
 }));
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-import { parse, clientFetch, clientMutate, serverFetch } from "@/lib/api/fetcher";
-import { userResponseSchema } from "@/schemas";
-import apiClient from "@/lib/api/client";
-import { getUsersPage, getUser, createUser, deleteUser } from "@/lib/api/users";
+import { parse } from "@/lib/api/parse";
+import { zUserResponse } from "@/lib/api/gen/zod.gen";
+import { get as clientGet, post as clientPost, del as clientDel } from "@/lib/api/client";
+import { getUsersPage, getUser, createUser, deleteUser } from "@/lib/api/users/client";
+import { getUsersPage as getUsersPageServer } from "@/lib/api/users/server";
 import { authOptions } from "@/lib/auth/config";
 
 const mockUser = {
@@ -39,62 +50,78 @@ const mockPaginated = {
   per_page: 20,
 };
 
-// ── API Fetcher Tests ────────────────────────────────────────────────────────
+// ── API Parse Tests ──────────────────────────────────────────────────────────
 
 describe("parse()", () => {
   it("should return parsed data when schema matches", () => {
-    const result = parse(mockUser, userResponseSchema);
+    const result = parse(mockUser, zUserResponse);
     expect(result.email).toBe("a@b.com");
   });
 
   it("should throw when schema validation fails", () => {
-    expect(() => parse({ email: "not-an-email" }, userResponseSchema)).toThrow(
+    expect(() => parse({ email: "not-an-email" }, zUserResponse)).toThrow(
       "API response validation failed",
     );
   });
 });
 
-describe("clientFetch()", () => {
-  it("should parse and return data on 200", async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockUser });
-    const data = await clientFetch("/users/1", userResponseSchema);
-    expect(data.email).toBe("a@b.com");
+// ── Users Client API Module Tests ────────────────────────────────────────────
+
+describe("users client API module", () => {
+  beforeEach(() => {
+    vi.mocked(clientGet).mockReset();
+    vi.mocked(clientPost).mockReset();
+    vi.mocked(clientDel).mockReset();
   });
 
-  it("should throw on non-2xx status", async () => {
-    vi.mocked(apiClient.get).mockRejectedValueOnce(new Error("Request failed with status 500"));
-    await expect(clientFetch("/users/1", userResponseSchema)).rejects.toThrow();
+  it("getUsersPage should request correct query params", async () => {
+    vi.mocked(clientGet).mockResolvedValueOnce(mockPaginated);
+    await getUsersPage(2, 50);
+    expect(clientGet).toHaveBeenCalledWith("/users?page=2&per_page=50", expect.anything());
+  });
+
+  it("getUser should request correct endpoint", async () => {
+    vi.mocked(clientGet).mockResolvedValueOnce(mockUser);
+    await getUser("550e8400-e29b-41d4-a716-446655440000");
+    expect(clientGet).toHaveBeenCalledWith(
+      "/users/550e8400-e29b-41d4-a716-446655440000",
+      expect.anything(),
+    );
+  });
+
+  it("createUser should POST with body", async () => {
+    vi.mocked(clientPost).mockResolvedValueOnce(mockUser);
+    await createUser({ email: "new@example.com", display_name: "New" });
+    expect(clientPost).toHaveBeenCalledWith(
+      "/users",
+      { email: "new@example.com", display_name: "New" },
+      expect.anything(),
+    );
+  });
+
+  it("deleteUser should send DELETE request", async () => {
+    vi.mocked(clientDel).mockResolvedValueOnce(undefined);
+    await deleteUser("550e8400-e29b-41d4-a716-446655440000");
+    expect(clientDel).toHaveBeenCalledWith(
+      "/users/550e8400-e29b-41d4-a716-446655440000",
+      undefined,
+    );
   });
 });
 
-describe("clientMutate()", () => {
-  it("should parse response on successful POST", async () => {
-    vi.mocked(apiClient.request).mockResolvedValueOnce({ data: mockUser });
-    const data = await clientMutate("/users", userResponseSchema, "POST", {
-      email: "a@b.com",
-      display_name: "A",
-    });
-    expect(data.email).toBe("a@b.com");
-  });
+// ── Users Server API Module Tests ────────────────────────────────────────────
 
-  it("should return undefined on 204 DELETE without schema", async () => {
-    vi.mocked(apiClient.request).mockResolvedValueOnce({ data: undefined });
-    const data = await clientMutate<void>("/users/1", undefined, "DELETE");
-    expect(data).toBeUndefined();
-  });
-});
-
-describe("serverFetch()", () => {
-  it("should attach Bearer token when provided", async () => {
+describe("users server API module", () => {
+  it("should attach Bearer token when provided explicitly", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(mockUser),
+      json: vi.fn().mockResolvedValue(mockPaginated),
     } as unknown as Response);
 
-    await serverFetch("/users/1", userResponseSchema, "test-token");
+    await getUsersPageServer(1, 8, "explicit-token");
     const callArgs = vi.mocked(global.fetch).mock.calls[0];
     const headers = (callArgs[1] as RequestInit)?.headers as Record<string, string>;
-    expect(headers?.Authorization).toBe("Bearer test-token");
+    expect(headers?.Authorization).toBe("Bearer explicit-token");
   });
 
   it("should throw when response is not ok", async () => {
@@ -104,52 +131,8 @@ describe("serverFetch()", () => {
       text: vi.fn().mockResolvedValue("Not found"),
     } as unknown as Response);
 
-    await expect(serverFetch("/users/1", userResponseSchema)).rejects.toThrow(
-      "Failed to fetch /users/1: 404",
-    );
-  });
-});
-
-// ── Users API Module Tests ───────────────────────────────────────────────────
-
-describe("users API module", () => {
-  beforeEach(() => {
-    vi.mocked(apiClient.get).mockReset();
-    vi.mocked(apiClient.request).mockReset();
-  });
-
-  it("getUsersPage should request correct query params", async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockPaginated });
-    await getUsersPage(2, 50);
-    expect(apiClient.get).toHaveBeenCalledWith("/users?page=2&per_page=50");
-  });
-
-  it("getUser should request correct endpoint", async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockUser });
-    await getUser("550e8400-e29b-41d4-a716-446655440000");
-    expect(apiClient.get).toHaveBeenCalledWith("/users/550e8400-e29b-41d4-a716-446655440000");
-  });
-
-  it("createUser should POST with body", async () => {
-    vi.mocked(apiClient.request).mockResolvedValueOnce({ data: mockUser });
-    await createUser({ email: "new@example.com", display_name: "New" });
-    expect(apiClient.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: "/users",
-        method: "POST",
-        data: { email: "new@example.com", display_name: "New" },
-      }),
-    );
-  });
-
-  it("deleteUser should send DELETE request", async () => {
-    vi.mocked(apiClient.request).mockResolvedValueOnce({ data: undefined });
-    await deleteUser("550e8400-e29b-41d4-a716-446655440000");
-    expect(apiClient.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: "/users/550e8400-e29b-41d4-a716-446655440000",
-        method: "DELETE",
-      }),
+    await expect(getUsersPageServer(1, 8)).rejects.toThrow(
+      "Server GET /users?page=1&per_page=8 failed (404): Not found",
     );
   });
 });
@@ -218,21 +201,48 @@ describe("Auth config", () => {
     expect(opts.callbacks?.jwt).toBeDefined();
     expect(opts.callbacks?.session).toBeDefined();
   });
+
+  it("profile callback should include role from IdP claim", () => {
+    const provider = authOptions.providers[0];
+    const p = provider as unknown as {
+      profile?: (p: Record<string, string>) => Record<string, unknown>;
+    };
+    const profile = p.profile?.({
+      sub: "123",
+      email: "test@example.com",
+      name: "Test",
+      role: "admin",
+    });
+    expect(profile?.role).toBe("admin");
+  });
+
+  it("profile callback should default role to user when absent", () => {
+    const provider = authOptions.providers[0];
+    const p = provider as unknown as {
+      profile?: (p: Record<string, string>) => Record<string, unknown>;
+    };
+    const profile = p.profile?.({
+      sub: "123",
+      email: "test@example.com",
+      name: "Test",
+    });
+    expect(profile?.role).toBe("user");
+  });
 });
 
 // ── API Type Contract Tests ──────────────────────────────────────────────────
 
 import type {
-  User,
+  UserResponse,
   CreateUserRequest,
   UpdateUserRequest,
   PaginatedUserResponse,
   ErrorResponse,
-} from "@/lib/api/types";
+} from "@/lib/api/gen/types.gen";
 
 describe("API types — generated from OpenAPI spec", () => {
   it("User type should include required fields", () => {
-    const user: User = {
+    const user: UserResponse = {
       id: "00000000-0000-0000-0000-000000000001",
       email: "admin@example.com",
       display_name: "Admin",
@@ -290,35 +300,36 @@ describe("API types — generated from OpenAPI spec", () => {
 
 // ── Zod Schema Validation Tests ──────────────────────────────────────────────
 
-import { createUserSchema, updateUserSchema } from "@/schemas";
+import { zCreateUserRequest } from "@/lib/api/gen/zod.gen";
+import { updateUserSchema } from "@/schemas";
 
 describe("Zod schemas", () => {
-  it("createUserSchema should accept valid input", () => {
-    const result = createUserSchema.safeParse({
+  it("zCreateUserRequest should accept valid input", () => {
+    const result = zCreateUserRequest.safeParse({
       email: "test@example.com",
       display_name: "Test User",
     });
     expect(result.success).toBe(true);
   });
 
-  it("createUserSchema should reject invalid email", () => {
-    const result = createUserSchema.safeParse({
+  it("zCreateUserRequest should reject invalid email", () => {
+    const result = zCreateUserRequest.safeParse({
       email: "not-an-email",
       display_name: "Test",
     });
     expect(result.success).toBe(false);
   });
 
-  it("createUserSchema should reject empty display_name", () => {
-    const result = createUserSchema.safeParse({
+  it("zCreateUserRequest should reject empty display_name", () => {
+    const result = zCreateUserRequest.safeParse({
       email: "test@example.com",
       display_name: "",
     });
     expect(result.success).toBe(false);
   });
 
-  it("createUserSchema should reject display_name exceeding 100 chars", () => {
-    const result = createUserSchema.safeParse({
+  it("zCreateUserRequest should reject display_name exceeding 100 chars", () => {
+    const result = zCreateUserRequest.safeParse({
       email: "test@example.com",
       display_name: "a".repeat(101),
     });
@@ -343,7 +354,7 @@ import type { Session } from "next-auth";
 describe("Auth session types", () => {
   it("Session should support accessToken and error fields", () => {
     const session: Session = {
-      user: { name: "Test", email: "test@example.com" },
+      user: { name: "Test", email: "test@example.com", role: "admin" },
       expires: new Date().toISOString(),
       accessToken: "abc.def.ghi",
       error: "RefreshAccessTokenError",
@@ -354,12 +365,20 @@ describe("Auth session types", () => {
 
   it("Session should be valid without error", () => {
     const session: Session = {
-      user: { name: "Test", email: "test@example.com" },
+      user: { name: "Test", email: "test@example.com", role: "user" },
       expires: new Date().toISOString(),
       accessToken: "abc.def.ghi",
     };
     expect(session.accessToken).toBeDefined();
     expect(session.error).toBeUndefined();
+  });
+
+  it("Session user should include role field", () => {
+    const session: Session = {
+      user: { name: "Test", email: "test@example.com", role: "manager" },
+      expires: new Date().toISOString(),
+    };
+    expect(session.user.role).toBe("manager");
   });
 });
 

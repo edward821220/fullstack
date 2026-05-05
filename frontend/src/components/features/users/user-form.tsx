@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createUser, updateUser } from "@/lib/api/users";
-import { createUserSchema, updateUserSchema } from "@/schemas";
-import type { UserResponse } from "@/schemas";
+import { createUser, updateUser } from "@/lib/api/users/client";
+import { zCreateUserRequest } from "@/lib/api/gen/zod.gen";
+import { updateUserSchema } from "@/schemas";
+import type { UserResponse } from "@/lib/api/gen/types.gen";
 
 interface UserFormProps {
   mode: "create" | "edit";
@@ -25,7 +26,7 @@ export function UserForm({ mode, user }: UserFormProps) {
     setError(null);
 
     if (mode === "create") {
-      const result = createUserSchema.safeParse({ email, display_name: displayName });
+      const result = zCreateUserRequest.safeParse({ email, display_name: displayName });
       if (!result.success) {
         setError(result.error.issues.map((issue) => issue.message).join(", "));
         return;

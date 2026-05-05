@@ -2,17 +2,37 @@ import type { NextAuthOptions } from "next-auth";
 import "./types";
 
 const issuer = process.env.AUTH_OIDC_ISSUER ?? "http://localhost:8080/dex";
+const wellKnownUrl = `${issuer}/.well-known/openid-configuration`;
 
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+// Cache for OIDC discovery metadata to avoid repeated network calls.
+// Module-level cache is safe in Next.js because the module is evaluated once per process.
+let cachedDiscovery: Record<string, string> | null = null;
+
+async function getDiscoveryConfig(): Promise<Record<string, string>> {
+  if (cachedDiscovery) {
+    return cachedDiscovery;
+  }
+  const response = await fetch(wellKnownUrl);
+  if (!response.ok) {
+    throw new Error(`OIDC discovery failed: ${response.status} ${response.statusText}`);
+  }
+  const config = (await response.json()) as Record<string, string>;
+  cachedDiscovery = config;
+  return config;
+}
 
 async function refreshAccessToken(token: { accessToken: string; refreshToken: string }): Promise<{
   accessToken: string;
   refreshToken?: string;
   expiresAt: number;
 }> {
-  const wellKnownUrl = `${issuer}/.well-known/openid-configuration`;
-  const config = await fetch(wellKnownUrl).then((r) => r.json());
-  const tokenEndpoint: string = config.token_endpoint;
+  const config = await getDiscoveryConfig();
+  const tokenEndpoint = config.token_endpoint;
+  if (!tokenEndpoint) {
+    throw new Error("OIDC discovery did not return token_endpoint");
+  }
 
   const response = await fetch(tokenEndpoint, {
     method: "POST",
@@ -47,7 +67,7 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.AUTH_OIDC_ID ?? "",
       clientSecret: process.env.AUTH_OIDC_SECRET ?? "",
       issuer,
-      wellKnown: `${issuer}/.well-known/openid-configuration`,
+      wellKnown: wellKnownUrl,
       authorization: { params: { scope: "openid email profile offline_access" } },
       profile(profile) {
         return {
@@ -55,6 +75,7 @@ export const authOptions: NextAuthOptions = {
           name: profile.name ?? profile.preferred_username ?? profile.email,
           email: profile.email,
           image: profile.picture ?? null,
+          role: profile.role ?? "user",
         };
       },
     },
@@ -64,12 +85,15 @@ export const authOptions: NextAuthOptions = {
     maxAge: 24 * 60 * 60, // 24 hours
   },
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, user }) {
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.idToken = account.id_token;
         token.expiresAt = account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000;
+        if (user?.role) {
+          token.role = user.role;
+        }
         return token;
       }
 
@@ -104,6 +128,9 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       session.accessToken = token.accessToken as string | undefined;
       session.error = token.error as string | undefined;
+      if (token.role && session.user) {
+        session.user.role = token.role as string;
+      }
       return session;
     },
   },
@@ -112,24 +139,24 @@ export const authOptions: NextAuthOptions = {
     signOut: "/login",
   },
   events: {
-    signOut({ token }) {
-      if (token.idToken) {
-        const endSessionUrl = new URL(`${issuer}/.well-known/openid-configuration`);
-        fetch(endSessionUrl)
-          .then((r) => r.json())
-          .then((config) => {
-            if (config.end_session_endpoint) {
-              const url = new URL(config.end_session_endpoint);
-              url.searchParams.set("id_token_hint", token.idToken as string);
-              url.searchParams.set(
-                "post_logout_redirect_uri",
-                process.env.AUTH_OIDC_LOGOUT_REDIRECT ??
-                  `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/login`,
-              );
-              fetch(url.toString()).catch(() => {});
-            }
-          })
-          .catch(() => {});
+    async signOut({ token }) {
+      if (!token.idToken) return;
+
+      try {
+        const config = await getDiscoveryConfig();
+        const endSessionEndpoint = config.end_session_endpoint;
+        if (!endSessionEndpoint) return;
+
+        const url = new URL(endSessionEndpoint);
+        url.searchParams.set("id_token_hint", token.idToken as string);
+        url.searchParams.set(
+          "post_logout_redirect_uri",
+          process.env.AUTH_OIDC_LOGOUT_REDIRECT ??
+            `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/login`,
+        );
+        await fetch(url.toString());
+      } catch {
+        // Silently ignore RP-initiated logout failures; local session is already cleared.
       }
     },
   },

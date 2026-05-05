@@ -46,6 +46,7 @@ tonic-prost.workspace = true
 prost.workspace = true
 tokio-stream.workspace = true
 axum-prometheus.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

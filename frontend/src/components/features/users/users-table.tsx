@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUsers } from "@/hooks/useUsers";
 import { useRole } from "@/hooks/useRole";
-import { deleteUser } from "@/lib/api/users";
-import type { PaginatedUserResponse, User } from "@/lib/api/types";
+import { deleteUser } from "@/lib/api/users/client";
+import type { PaginatedUserResponse, UserResponse } from "@/lib/api/gen/types.gen";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-TW", {
   dateStyle: "medium",
@@ -195,7 +195,7 @@ function UserRow({
   isAdmin: boolean;
   isManager: boolean;
   onDelete: () => void;
-  user: User;
+  user: UserResponse;
 }) {
   return (
     <tr className="hover:bg-secondary/30">

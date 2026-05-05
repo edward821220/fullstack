@@ -34,9 +34,6 @@ yarn-error.log*
 # Config (contains secrets)
 backend/config/local.yaml
 
-# Generated OpenAPI spec
-docs/openapi.json
-
 # gRPC protobuf descriptor files
 *.bin
 
