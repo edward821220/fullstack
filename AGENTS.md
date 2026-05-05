@@ -114,15 +114,7 @@ The following skills live under `.agents/skills/` and are available via slash-co
 - **`/diagnose`** — Hard bugs, performance regressions, "something is broken/failing". Follows reproduce → minimise → hypothesise → instrument → fix → regression-test. Use **instead of ad-hoc debugging**.
 - **`/grill-with-docs`** — Before a big refactor or plan, challenge it against `CONTEXT.md` and `docs/adr/` domain model. Use when the change touches architecture or vocabulary.
 - **`/improve-codebase-architecture`** — When the codebase feels shallow, seams are wrong, or a bug revealed missing testability. Uses `CONTEXT.md` + `docs/adr/` as authority.
-- **`/setup-matt-pocock-skills`** — One-time scaffold for issue-tracker config, triage labels, domain doc layout. Only run when bootstrapping a brand-new repo from this template.
 - **`/tdd`** — Building a feature or fixing a bug test-first. Red-green-refactor, one vertical slice at a time.
-- **`/to-issues`** — Turn a plan/spec/PRD into independently-grabbable GitHub issues using vertical slices. Use before starting a multi-issue milestone.
-- **`/to-prd`** — Turn current conversation context into a PRD and submit it as a GitHub issue. Use when a feature idea is fuzzy but needs scoping.
-- **`/triage`** — Triage incoming issues through a state machine of triage roles. Use when issue backlog is unruly or new bugs arrive without labels/scope.
 - **`/zoom-out`** — Broader context on an unfamiliar code section. Use when you (the agent) are lost in a module and need high-level orientation.
 
-### Productivity
 
-- **`/caveman`** — Ultra-compressed communication. Use when the user asks for less tokens, "be brief", "caveman mode".
-- **`/grill-me`** — Interview the user relentlessly about a plan until every branch is resolved. Use when the user's requirements are ambiguous or contradictory.
-- **`/write-a-skill`** — Create a new local skill with proper structure. Use when the user wants to add a reusable workflow to `.agents/skills/`.
