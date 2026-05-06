@@ -1,24 +1,20 @@
+use super::{Transaction, UserRepo};
+use crate::{Error, Result};
 use async_trait::async_trait;
 use model::role::Role;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use uuid::Uuid;
-
-use super::{Transaction, UserRepo};
-use crate::{Error, Result};
-
 pub struct MssqlUserRepo {
     pool: bb8::Pool<bb8_tiberius::ConnectionManager>,
     config: tiberius::Config,
 }
-
 impl MssqlUserRepo {
     pub fn new(pool: bb8::Pool<bb8_tiberius::ConnectionManager>, config: tiberius::Config) -> Self {
         Self { pool, config }
     }
 }
-
 impl Clone for MssqlUserRepo {
     fn clone(&self) -> Self {
         Self {
@@ -27,11 +23,9 @@ impl Clone for MssqlUserRepo {
         }
     }
 }
-
 pub struct MssqlTransaction {
     client: tiberius::Client<tokio_util::compat::Compat<tokio::net::TcpStream>>,
 }
-
 #[async_trait]
 impl Transaction for MssqlTransaction {
     async fn commit(mut self) -> Result<()> {
@@ -43,7 +37,6 @@ impl Transaction for MssqlTransaction {
             })?;
         Ok(())
     }
-
     async fn rollback(mut self) -> Result<()> {
         self.client
             .simple_query("ROLLBACK TRAN")
@@ -54,7 +47,6 @@ impl Transaction for MssqlTransaction {
         Ok(())
     }
 }
-
 fn row_to_user(row: &tiberius::Row) -> Result<User> {
     Ok(User {
         id: row.get::<Uuid, _>("id").ok_or_else(|| Error::Database {
@@ -85,11 +77,9 @@ fn row_to_user(row: &tiberius::Row) -> Result<User> {
         version: row.get::<i64, _>("version").unwrap_or(1),
     })
 }
-
 #[async_trait]
 impl UserRepo for MssqlUserRepo {
     type Tx = MssqlTransaction;
-
     async fn begin_transaction(&self) -> Result<Self::Tx> {
         let tcp = tokio::net::TcpStream::connect(self.config.get_addr())
             .await
@@ -99,28 +89,23 @@ impl UserRepo for MssqlUserRepo {
         tcp.set_nodelay(true).map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let mut client = tiberius::Client::connect(self.config.clone(), tcp.compat_write())
             .await
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         client
             .simple_query("BEGIN TRAN")
             .await
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         Ok(MssqlTransaction { client })
     }
-
     async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let rows = client
             .query(
                 "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE id = @P1",
@@ -128,22 +113,18 @@ impl UserRepo for MssqlUserRepo {
             )
             .await
             .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         match row {
             Some(ref r) => Ok(Some(row_to_user(r)?)),
             None => Ok(None),
         }
     }
-
     async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let rows = client
             .query(
                 "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version FROM users WHERE email = @P1",
@@ -151,17 +132,14 @@ impl UserRepo for MssqlUserRepo {
             )
             .await
             .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         match row {
             Some(ref r) => Ok(Some(row_to_user(r)?)),
             None => Ok(None),
         }
     }
-
     async fn create(
         &self,
         email: &str,
@@ -174,14 +152,11 @@ impl UserRepo for MssqlUserRepo {
                 email: email.to_owned(),
             });
         }
-
         let now = time::OffsetDateTime::now_utc();
         let id = Uuid::new_v4();
-
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let rows = client.query(
             "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
@@ -198,31 +173,25 @@ impl UserRepo for MssqlUserRepo {
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         row.ok_or_else(|| Error::Database {
             message: "INSERT did not return a row".to_owned(),
         })
         .and_then(|r| row_to_user(&r))
     }
-
     async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
         let user = self
             .find_by_id(id)
             .await?
             .ok_or(Error::UserNotFound { id })?;
-
         let new_name = display_name.unwrap_or(&user.display_name);
         let expected_version = user.version;
         let now = time::OffsetDateTime::now_utc();
-
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let rows = client.query(
             "UPDATE users SET display_name = @P1, updated_at = @P2, version = version + 1
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
@@ -231,11 +200,9 @@ impl UserRepo for MssqlUserRepo {
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         match row {
             Some(r) => row_to_user(&r),
             None => Err(Error::Conflict {
@@ -244,30 +211,25 @@ impl UserRepo for MssqlUserRepo {
             }),
         }
     }
-
     async fn delete(&self, id: Uuid) -> Result<()> {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let result = client
             .execute("DELETE FROM users WHERE id = @P1", &[&id])
             .await
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         if result.total() == 0 {
             return Err(Error::UserNotFound { id });
         }
         Ok(())
     }
-
     async fn list(&self, page: u64, per_page: u64) -> Result<(Vec<User>, u64)> {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let count_row = client
             .query("SELECT COUNT(*) FROM users", &[])
             .await
@@ -282,14 +244,11 @@ impl UserRepo for MssqlUserRepo {
             .ok_or_else(|| Error::Database {
                 message: "COUNT query returned no rows".to_owned(),
             })?;
-
         let total: i32 = count_row.get(0).ok_or_else(|| Error::Database {
             message: "COUNT column missing".to_owned(),
         })?;
-
         let offset = ((page - 1) * per_page) as i32;
         let limit = per_page as i32;
-
         let rows = client
             .query(
                 "SELECT id, email, display_name, role, email_verified, created_at, updated_at, version
@@ -300,7 +259,6 @@ impl UserRepo for MssqlUserRepo {
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         let users: Vec<User> = rows
             .into_results()
             .await
@@ -311,10 +269,8 @@ impl UserRepo for MssqlUserRepo {
             .flat_map(|rs| rs.into_iter())
             .map(|row| row_to_user(&row))
             .collect::<Result<Vec<_>>>()?;
-
         Ok((users, total as u64))
     }
-
     async fn find_by_identity(
         &self,
         provider: &str,
@@ -333,7 +289,6 @@ impl UserRepo for MssqlUserRepo {
             None => Ok(None),
         }
     }
-
     async fn find_identity(
         &self,
         provider: &str,
@@ -343,7 +298,6 @@ impl UserRepo for MssqlUserRepo {
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let row = client
             .query(
                 "SELECT id, user_id, provider, issuer, external_sub, created_at
@@ -359,7 +313,6 @@ impl UserRepo for MssqlUserRepo {
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         match row {
             Some(r) => Ok(Some(UserIdentity {
                 id: r.get("id").ok_or_else(|| Error::Database {
@@ -381,7 +334,6 @@ impl UserRepo for MssqlUserRepo {
             None => Ok(None),
         }
     }
-
     async fn create_identity(
         &self,
         user_id: Uuid,
@@ -391,11 +343,9 @@ impl UserRepo for MssqlUserRepo {
     ) -> Result<UserIdentity> {
         let id = Uuid::new_v4();
         let now = time::OffsetDateTime::now_utc();
-
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         client
             .execute(
                 "INSERT INTO user_identities (id, user_id, provider, issuer, external_sub, created_at)
@@ -413,7 +363,6 @@ impl UserRepo for MssqlUserRepo {
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         Ok(UserIdentity {
             id,
             user_id,
@@ -423,7 +372,6 @@ impl UserRepo for MssqlUserRepo {
             created_at: now,
         })
     }
-
     async fn sync_oidc_attributes(
         &self,
         id: Uuid,
@@ -432,11 +380,9 @@ impl UserRepo for MssqlUserRepo {
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
-
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         let rows = client.query(
             "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4, version = version + 1
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
@@ -445,15 +391,12 @@ impl UserRepo for MssqlUserRepo {
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         row.ok_or(Error::UserNotFound { id })
             .and_then(|r| row_to_user(&r))
     }
-
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
         let rows = tx
             .client
@@ -466,17 +409,14 @@ impl UserRepo for MssqlUserRepo {
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         match row {
             Some(ref r) => Ok(Some(row_to_user(r)?)),
             None => Ok(None),
         }
     }
-
     async fn create_in_tx(
         &self,
         tx: &mut Self::Tx,
@@ -487,7 +427,6 @@ impl UserRepo for MssqlUserRepo {
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
         let id = Uuid::new_v4();
-
         let rows = tx.client.query(
             "INSERT INTO users (id, email, display_name, role, email_verified, created_at, updated_at, version)
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
@@ -504,17 +443,14 @@ impl UserRepo for MssqlUserRepo {
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         row.ok_or_else(|| Error::Database {
             message: "INSERT did not return a row".to_owned(),
         })
         .and_then(|r| row_to_user(&r))
     }
-
     async fn sync_oidc_attributes_in_tx(
         &self,
         tx: &mut Self::Tx,
@@ -524,7 +460,6 @@ impl UserRepo for MssqlUserRepo {
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
-
         let rows = tx.client.query(
             "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4, version = version + 1
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
@@ -539,15 +474,12 @@ impl UserRepo for MssqlUserRepo {
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
-
         let row = rows.into_row().await.map_err(|e| Error::Database {
             message: e.to_string(),
         })?;
-
         row.ok_or(Error::UserNotFound { id })
             .and_then(|r| row_to_user(&r))
     }
-
     async fn create_identity_in_tx(
         &self,
         tx: &mut Self::Tx,
@@ -558,7 +490,6 @@ impl UserRepo for MssqlUserRepo {
     ) -> Result<UserIdentity> {
         let id = Uuid::new_v4();
         let now = time::OffsetDateTime::now_utc();
-
         tx.client
             .execute(
                 "INSERT INTO user_identities (id, user_id, provider, issuer, external_sub, created_at)
@@ -576,7 +507,6 @@ impl UserRepo for MssqlUserRepo {
             .map_err(|e| Error::Database {
                 message: e.to_string(),
             })?;
-
         Ok(UserIdentity {
             id,
             user_id,
@@ -587,14 +517,12 @@ impl UserRepo for MssqlUserRepo {
         })
     }
 }
-
 #[cfg(test)]
 mod tests {
+    use super::{Transaction, UserRepo};
     use config::DatabaseConfig;
     use testcontainers::{ImageExt, runners::AsyncRunner};
     use testcontainers_modules::mssql_server::MssqlServer;
-
-    use super::{Transaction, UserRepo};
 
     fn db_config(port: u16) -> DatabaseConfig {
         DatabaseConfig {

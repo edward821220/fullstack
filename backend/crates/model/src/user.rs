@@ -1,7 +1,6 @@
+use crate::role::Role;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::role::Role;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     Router,
     body::Body,
@@ -7,6 +5,7 @@ use axum::{
     middleware::{from_fn, from_fn_with_state},
     routing::get,
 };
+use std::sync::Arc;
 use svc::audit::PiiMode;
 use tower::ServiceExt;
 

@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use repo::HealthProbe;
+use std::sync::Arc;
 use svc::health::{HealthChecker, HealthError};
 
 /// Database health-check adapter.

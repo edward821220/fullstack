@@ -1,11 +1,10 @@
 use clap::{Parser, Subcommand};
-use std::time::Duration;
-use utoipa::OpenApi;
-
 use config::AppConfig;
 use server::grpc;
 use server::openapi::ApiDoc;
 use server::telemetry::init_tracing;
+use std::time::Duration;
+use utoipa::OpenApi;
 
 #[derive(Parser)]
 #[command(name = "server")]

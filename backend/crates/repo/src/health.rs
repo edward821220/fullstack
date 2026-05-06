@@ -1,6 +1,5 @@
-use async_trait::async_trait;
-
 use crate::{Error, Result};
+use async_trait::async_trait;
 
 /// A lightweight infrastructure probe that verifies an external dependency
 /// is reachable without exercising business logic.

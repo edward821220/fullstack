@@ -1,9 +1,7 @@
+use crate::health_checker::DbHealthChecker;
+use config::AppConfig;
 use std::sync::Arc;
 use std::time::Duration;
-
-use config::AppConfig;
-
-use crate::health_checker::DbHealthChecker;
 
 pub async fn connect_to_database(
     config: &AppConfig,

@@ -1,8 +1,7 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use config::AppConfig;
 use server::{grpc, health_checker::DbHealthChecker, telemetry::init_tracing};
+use std::sync::Arc;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

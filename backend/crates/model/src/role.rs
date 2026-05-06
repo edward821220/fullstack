@@ -64,24 +64,6 @@ impl fmt::Display for UnknownRoleError {
 
 impl std::error::Error for UnknownRoleError {}
 
-// ═════════════════════════════════════════════════════════════════════════════
-// sqlx integration (PostgreSQL only)
-// ═════════════════════════════════════════════════════════════════════════════
-
-impl sqlx::Type<sqlx::Postgres> for Role {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        sqlx::postgres::PgTypeInfo::with_name("VARCHAR")
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for Role {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        s.parse()
-            .map_err(|e: UnknownRoleError| Box::new(e) as sqlx::error::BoxDynError)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

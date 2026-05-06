@@ -7,6 +7,5 @@ edition.workspace = true
 serde.workspace = true
 figment.workspace = true
 snafu.workspace = true
-tiberius.workspace = true
 url.workspace = true
 tracing.workspace = true

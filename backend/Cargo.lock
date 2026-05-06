@@ -575,7 +575,6 @@ dependencies = [
  "figment",
  "serde",
  "snafu",
- "tiberius",
  "tracing",
  "url",
 ]
@@ -2197,7 +2196,6 @@ name = "model"
 version = "0.1.0"
 dependencies = [
  "serde",
- "sqlx",
  "time",
  "utoipa",
  "uuid",

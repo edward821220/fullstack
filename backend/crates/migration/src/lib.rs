@@ -101,6 +101,43 @@ fn make_postgres_tls_connector(
 
 use std::sync::Arc;
 
+/// Build a [`tiberius::Config`] from the neutral [`config::DatabaseConfig`].
+///
+/// Kept locally in the migration crate (rather than in `config`) so the neutral
+/// config module does not depend on the MSSQL driver.
+fn to_tiberius_config(
+    cfg: &config::DatabaseConfig,
+) -> std::result::Result<tiberius::Config, String> {
+    if cfg.host.is_empty() {
+        return Err("database host is empty".to_owned());
+    }
+    if cfg.database.is_empty() {
+        return Err("database name is empty".to_owned());
+    }
+
+    let password = cfg.resolve_password();
+    let mut config = tiberius::Config::new();
+    config.host(&cfg.host);
+    config.port(cfg.port);
+    config.database(&cfg.database);
+    config.authentication(tiberius::AuthMethod::sql_server(&cfg.username, &password));
+
+    if cfg.encrypt {
+        config.encryption(tiberius::EncryptionLevel::Required);
+        if cfg.trust_cert {
+            config.trust_cert();
+        } else if let Some(ref ca_path) = cfg.ca_cert_path
+            && !ca_path.is_empty()
+        {
+            config.trust_cert_ca(ca_path);
+        }
+    } else {
+        config.encryption(tiberius::EncryptionLevel::NotSupported);
+    }
+
+    Ok(config)
+}
+
 pub async fn run(config: &config::DatabaseConfig) -> Result<(), Box<dyn std::error::Error>> {
     use config::DatabaseDriver;
 
@@ -148,7 +185,7 @@ pub async fn run(config: &config::DatabaseConfig) -> Result<(), Box<dyn std::err
             tracing::info!("Running MSSQL migrations via refinery");
             let db_name = config.extract_mssql_database_name()?;
 
-            let tiberius_config = config.to_tiberius_config()?;
+            let tiberius_config = to_tiberius_config(config)?;
 
             // Connect to master first, create database if it doesn't exist
             {

@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
+use crate::problem::ProblemResponse;
 use axum::{Json, response::Response};
 use dto::{ErrorResponse, HealthResponse};
+use std::sync::Arc;
 use svc::HealthChecker;
-
-use crate::problem::ProblemResponse;
 
 #[utoipa::path(
     get,

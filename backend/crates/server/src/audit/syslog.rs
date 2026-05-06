@@ -1,7 +1,5 @@
 use std::sync::Arc;
-
 use svc::audit::{AuditError, AuditEvent, AuditExporter};
-
 /// Syslog exporter (RFC 5424).
 /// Supports UDP (default), TCP, and TCP+TLS.
 pub struct SyslogExporter {
@@ -13,7 +11,6 @@ pub struct SyslogExporter {
     hostname: String,
     tls_connector: Option<tokio_rustls::TlsConnector>,
 }
-
 impl SyslogExporter {
     pub fn new(
         host: String,
@@ -47,7 +44,6 @@ impl SyslogExporter {
             "local7" => 23,
             _ => 16, // default local0
         };
-
         let tls_connector = if tls_enabled {
             let mut roots = tokio_rustls::rustls::RootCertStore::empty();
             let cert_result = rustls_native_certs::load_native_certs();
@@ -61,7 +57,6 @@ impl SyslogExporter {
         } else {
             None
         };
-
         Self {
             host,
             port,
@@ -72,7 +67,6 @@ impl SyslogExporter {
             tls_connector,
         }
     }
-
     fn to_rfc5424(&self, event: &AuditEvent) -> String {
         let severity = match event.level() {
             tracing::Level::INFO => 6,
@@ -94,13 +88,11 @@ impl SyslogExporter {
         )
     }
 }
-
 #[async_trait::async_trait]
 impl AuditExporter for SyslogExporter {
     async fn export(&self, event: AuditEvent) -> Result<(), AuditError> {
         let msg = self.to_rfc5424(&event);
         let addr = format!("{}:{}", self.host, self.port);
-
         if self.protocol == "tcp" || self.tls_connector.is_some() {
             let stream =
                 tokio::net::TcpStream::connect(&addr)
@@ -108,7 +100,6 @@ impl AuditExporter for SyslogExporter {
                     .map_err(|e| AuditError::Export {
                         message: format!("Syslog TCP connect failed: {e}"),
                     })?;
-
             if let Some(connector) = &self.tls_connector {
                 let server_name = self
                     .host
@@ -167,7 +158,6 @@ impl AuditExporter for SyslogExporter {
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,9 +1,6 @@
-use std::time::Duration;
-
-use svc::audit::{AuditError, AuditEvent, AuditExporter};
-
 use super::proxy::AuditEventProxy;
-
+use std::time::Duration;
+use svc::audit::{AuditError, AuditEvent, AuditExporter};
 /// OTLP Logs exporter.
 /// Sends structured JSON over HTTP to an OTEL Collector.
 pub struct OtelLogsExporter {
@@ -11,7 +8,6 @@ pub struct OtelLogsExporter {
     endpoint: String,
     service_name: String,
 }
-
 impl OtelLogsExporter {
     pub fn new(endpoint: String, timeout_seconds: u64, service_name: String) -> Self {
         let client = reqwest::Client::builder()
@@ -24,21 +20,18 @@ impl OtelLogsExporter {
             service_name,
         }
     }
-
     fn to_otlp_body(&self, event: &AuditEvent) -> serde_json::Value {
         let proxy = AuditEventProxy::from(event);
         let timestamp_nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
-
         let severity_number = match event.level() {
             tracing::Level::INFO => 9,
             tracing::Level::WARN => 13,
             tracing::Level::ERROR => 17,
             _ => 9,
         };
-
         let mut attributes = vec![serde_json::json!(
             {"key": "audit.event_type", "value": {"stringValue": proxy.event_type}}
         )];
@@ -72,7 +65,6 @@ impl OtelLogsExporter {
                 {"key": "audit.reason", "value": {"stringValue": v}}
             ));
         }
-
         serde_json::json!({
             "resourceLogs": [
                 {
@@ -99,7 +91,6 @@ impl OtelLogsExporter {
         })
     }
 }
-
 #[async_trait::async_trait]
 impl AuditExporter for OtelLogsExporter {
     async fn export(&self, event: AuditEvent) -> Result<(), AuditError> {
@@ -129,7 +120,6 @@ impl AuditExporter for OtelLogsExporter {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,31 +1,27 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
+use crate::problem::ProblemResponse;
+use crate::state::AppState;
 use async_trait::async_trait;
 use axum::{
     extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
 use openidconnect::{IssuerUrl, core::CoreProviderMetadata};
-use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-
-use crate::problem::ProblemResponse;
-use crate::state::AppState;
-use config::{AuthConfig, DiscoveryMode, RoleClaimSource};
 use repo::UserRepo;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use svc::AuditEvent;
 use svc::{OidcUserInfo, ProvisioningPolicy, UserService, UserServiceTrait};
-
+use tokio::sync::Mutex;
 #[derive(Debug, Clone)]
 pub enum AuthFailure {
     Unauthorized(String),
     Forbidden(String),
     Internal(String),
 }
-
 impl std::fmt::Display for AuthFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -35,7 +31,6 @@ impl std::fmt::Display for AuthFailure {
         }
     }
 }
-
 impl IntoResponse for AuthFailure {
     fn into_response(self) -> Response {
         let response = match self {
@@ -46,7 +41,6 @@ impl IntoResponse for AuthFailure {
         response.into_response()
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
@@ -55,18 +49,15 @@ pub struct AuthUser {
     pub role: model::role::Role,
     pub sub: String,
 }
-
 /// Marker inserted by the OIDC middleware when authentication is disabled.
 /// Allows downstream authz middleware to distinguish "auth disabled" from
 /// "auth enabled but identity missing".
 #[derive(Debug, Clone)]
 pub struct AuthDisabledMarker;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwksResponse {
     pub keys: Vec<serde_json::Value>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Claims {
     pub sub: String,
@@ -85,18 +76,15 @@ pub struct Claims {
     #[serde(default)]
     pub groups: Option<Vec<String>>,
 }
-
 /// Port for OIDC HTTP operations. Production uses reqwest; tests inject a fake.
 #[async_trait]
 pub trait OidcHttpClient: Send + Sync {
     async fn fetch_jwks(&self, uri: &str) -> Result<JwksResponse, String>;
     async fn fetch_metadata(&self, url: &str) -> Result<CoreProviderMetadata, String>;
 }
-
 pub struct ReqwestOidcClient {
     client: reqwest::Client,
 }
-
 #[async_trait]
 impl OidcHttpClient for ReqwestOidcClient {
     async fn fetch_jwks(&self, uri: &str) -> Result<JwksResponse, String> {
@@ -110,7 +98,6 @@ impl OidcHttpClient for ReqwestOidcClient {
             .await
             .map_err(|e| format!("Failed to parse JWKS: {e}"))
     }
-
     async fn fetch_metadata(&self, url: &str) -> Result<CoreProviderMetadata, String> {
         self.client
             .get(url)
@@ -123,33 +110,27 @@ impl OidcHttpClient for ReqwestOidcClient {
             .map_err(|e| format!("Failed to parse OIDC discovery: {e}"))
     }
 }
-
 pub struct OidcValidator {
     config: AuthConfig,
     jwks_cache: Mutex<(Vec<serde_json::Value>, Instant)>,
     metadata_cache: Mutex<Option<(CoreProviderMetadata, Instant)>>,
     http_client: Arc<dyn OidcHttpClient>,
 }
-
 impl OidcValidator {
     pub fn new(config: AuthConfig) -> Self {
         let mut http_builder = reqwest::Client::builder().timeout(Duration::from_secs(10));
-
         if config.danger_accept_invalid_certs {
             http_builder = http_builder.danger_accept_invalid_certs(true);
             tracing::warn!(
                 "OIDC: TLS certificate verification disabled (danger_accept_invalid_certs=true)"
             );
         }
-
         let client = http_builder.build().unwrap_or_else(|e| {
             tracing::error!("Failed to build OIDC HTTP client: {e}");
             std::process::exit(1);
         });
-
         Self::with_client(config, Arc::new(ReqwestOidcClient { client }))
     }
-
     pub fn with_client(config: AuthConfig, http_client: Arc<dyn OidcHttpClient>) -> Self {
         Self {
             config,
@@ -158,11 +139,9 @@ impl OidcValidator {
             http_client,
         }
     }
-
     pub fn auth_enabled(&self) -> bool {
         self.config.enabled
     }
-
     pub async fn authenticate_token<R: UserRepo>(
         &self,
         token: &str,
@@ -172,15 +151,12 @@ impl OidcValidator {
         let jwks = self.get_jwks().await.map_err(|e| {
             AuthFailure::Unauthorized(format!("Failed to retrieve JWKS for token validation: {e}"))
         })?;
-
         let claims = self
             .validate_token(token, &jwks)
             .map_err(|e| AuthFailure::Unauthorized(format!("Invalid or expired JWT token: {e}")))?;
-
         let user_info = self.extract_user_info(&claims).map_err(|e| {
             AuthFailure::Unauthorized(format!("Failed to extract required claims from token: {e}"))
         })?;
-
         let user = svc.provision_user(&user_info, provisioning).await.map_err(|e| {
             tracing::warn!("User lookup/creation failed: {e}");
             AuthFailure::Forbidden(
@@ -188,7 +164,6 @@ impl OidcValidator {
                     .to_owned(),
             )
         })?;
-
         Ok(AuthUser {
             user_id: user.id,
             email: user.email,
@@ -197,9 +172,7 @@ impl OidcValidator {
             sub: claims.sub,
         })
     }
-
     // --- internal helpers ---
-
     async fn get_jwks(&self) -> Result<Vec<serde_json::Value>, AuthFailure> {
         let cache_ttl = Duration::from_secs(self.config.jwks_cache_duration_secs);
         {
@@ -208,22 +181,18 @@ impl OidcValidator {
                 return Ok(cache.0.clone());
             }
         }
-
         let jwks_uri = self
             .resolve_jwks_uri()
             .await
             .map_err(|e| AuthFailure::Internal(format!("Failed to resolve JWKS URI: {e}")))?;
-
         let response = self.http_client.fetch_jwks(&jwks_uri).await.map_err(|e| {
             tracing::warn!("Failed to fetch JWKS: {e}");
             AuthFailure::Unauthorized(format!("Failed to fetch JWKS: {e}"))
         })?;
-
         let mut cache = self.jwks_cache.lock().await;
         *cache = (response.keys.clone(), Instant::now());
         Ok(response.keys)
     }
-
     async fn discover_provider_metadata(&self) -> Result<CoreProviderMetadata, AuthFailure> {
         let cache_ttl = Duration::from_secs(self.config.jwks_cache_duration_secs);
         {
@@ -234,17 +203,14 @@ impl OidcValidator {
                 return Ok(metadata.clone());
             }
         }
-
         let issuer_url = IssuerUrl::new(self.config.issuer_url.clone()).map_err(|e| {
             tracing::warn!("Invalid issuer URL: {e}");
             AuthFailure::Internal(format!("Invalid issuer URL: {e}"))
         })?;
-
         let discovery_url = format!(
             "{}/.well-known/openid-configuration",
             issuer_url.as_str().trim_end_matches('/')
         );
-
         let metadata = self
             .http_client
             .fetch_metadata(&discovery_url)
@@ -253,13 +219,10 @@ impl OidcValidator {
                 tracing::warn!("Failed to fetch OIDC discovery: {e}");
                 AuthFailure::Unauthorized(format!("Failed to fetch OIDC discovery: {e}"))
             })?;
-
         let mut cache = self.metadata_cache.lock().await;
         *cache = Some((metadata.clone(), Instant::now()));
-
         Ok(metadata)
     }
-
     async fn resolve_jwks_uri(&self) -> Result<String, AuthFailure> {
         match self.config.discovery_mode {
             DiscoveryMode::Manual => self
@@ -278,7 +241,6 @@ impl OidcValidator {
             }
         }
     }
-
     fn validate_token(
         &self,
         token: &str,
@@ -288,12 +250,10 @@ impl OidcValidator {
             tracing::warn!("Failed to decode JWT header: {e}");
             AuthFailure::Unauthorized(format!("Failed to decode JWT header: {e}"))
         })?;
-
         let kid = header.kid.ok_or_else(|| {
             tracing::warn!("JWT missing kid claim");
             AuthFailure::Unauthorized("JWT missing kid claim".to_owned())
         })?;
-
         let jwk_value = jwks
             .iter()
             .find(|k| {
@@ -305,18 +265,15 @@ impl OidcValidator {
                 tracing::warn!("JWK with kid={kid} not found in JWKS");
                 AuthFailure::Unauthorized(format!("JWK with kid={kid} not found in JWKS"))
             })?;
-
         let jwk: jsonwebtoken::jwk::Jwk =
             serde_json::from_value(jwk_value.clone()).map_err(|e| {
                 tracing::warn!("Failed to parse JWK: {e}");
                 AuthFailure::Internal(format!("Failed to parse JWK: {e}"))
             })?;
-
         let decoding_key = DecodingKey::from_jwk(&jwk).map_err(|e| {
             tracing::warn!("Failed to construct decoding key from JWK: {e}");
             AuthFailure::Internal(format!("Failed to construct decoding key from JWK: {e}"))
         })?;
-
         let alg_str = format!("{:?}", header.alg);
         if !self
             .config
@@ -329,21 +286,17 @@ impl OidcValidator {
                 "JWT algorithm {alg_str} is not allowed"
             )));
         }
-
         let mut validation = Validation::new(header.alg);
         validation.set_audience(&self.config.audience);
         validation.set_issuer(&[self.resolve_issuer()]);
         validation.set_required_spec_claims(&["exp", "iss", "sub"]);
         validation.leeway = self.config.clock_skew_seconds;
-
         let token_data = decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
             tracing::warn!("JWT validation failed: {e}");
             AuthFailure::Unauthorized(format!("JWT validation failed: {e}"))
         })?;
-
         Ok(token_data.claims)
     }
-
     fn resolve_issuer(&self) -> String {
         match self.config.discovery_mode {
             DiscoveryMode::Manual => self
@@ -355,7 +308,6 @@ impl OidcValidator {
             DiscoveryMode::Discovery => self.config.issuer_url.clone(),
         }
     }
-
     fn extract_user_info(&self, claims: &Claims) -> Result<OidcUserInfo, AuthFailure> {
         let roles = self.extract_roles(claims);
         let issuer = claims.iss.clone().unwrap_or_else(|| self.resolve_issuer());
@@ -363,7 +315,6 @@ impl OidcValidator {
             tracing::warn!("JWT missing required email claim");
             AuthFailure::Unauthorized("JWT missing required email claim".to_owned())
         })?;
-
         if self.config.require_email_verified {
             let verified = claims.email_verified.unwrap_or(false);
             if !verified {
@@ -373,7 +324,6 @@ impl OidcValidator {
                 ));
             }
         }
-
         Ok(OidcUserInfo {
             sub: claims.sub.clone(),
             issuer,
@@ -387,7 +337,6 @@ impl OidcValidator {
             roles,
         })
     }
-
     fn extract_roles(&self, claims: &Claims) -> Vec<String> {
         match self.config.role_claim_source {
             RoleClaimSource::Roles => claims.roles.clone().unwrap_or_default(),
@@ -395,7 +344,6 @@ impl OidcValidator {
         }
     }
 }
-
 pub async fn oidc_middleware(
     State(state): State<Arc<AppState>>,
     mut req: Request,
@@ -405,7 +353,6 @@ pub async fn oidc_middleware(
         req.extensions_mut().insert(AuthDisabledMarker);
         return Ok(next.run(req).await);
     }
-
     let token = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
@@ -417,7 +364,6 @@ pub async fn oidc_middleware(
             });
             AuthFailure::Unauthorized("Missing or invalid Bearer token".to_owned())
         })?;
-
     let auth_user = state
         .oidc
         .authenticate_token(token, state.svc.as_ref(), &state.provisioning)
@@ -428,19 +374,15 @@ pub async fn oidc_middleware(
             });
             e
         })?;
-
     state.audit.record(AuditEvent::AuthSuccess {
         user_id: auth_user.user_id,
         email: auth_user.email.clone(),
         role: auth_user.role.to_string(),
         sub: auth_user.sub.clone(),
     });
-
     req.extensions_mut().insert(auth_user);
-
     Ok(next.run(req).await)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

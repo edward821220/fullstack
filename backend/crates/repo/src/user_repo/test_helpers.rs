@@ -1,11 +1,9 @@
-use std::sync::{Arc, Mutex};
-
+use super::{Error, Result, Transaction, UserRepo};
 use async_trait::async_trait;
 use model::user::User;
 use model::user_identity::UserIdentity;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-
-use super::{Error, Result, Transaction, UserRepo};
 
 /// An in-memory fake implementation of [`UserRepo`] for testing.
 pub struct MockUserRepo {

@@ -1,24 +1,20 @@
-use std::sync::Arc;
-
+pub use crate::authz::domain::{AuthzError, Role, authorize_role};
+use crate::middleware::oidc::{AuthDisabledMarker, AuthUser};
+use crate::problem::ProblemResponse;
+use crate::state::AppState;
 use axum::{
     extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-
-pub use crate::authz::domain::{AuthzError, Role, authorize_role};
-use crate::middleware::oidc::{AuthDisabledMarker, AuthUser};
-use crate::problem::ProblemResponse;
-use crate::state::AppState;
+use std::sync::Arc;
 use svc::AuditEvent;
-
 impl IntoResponse for AuthzError {
     fn into_response(self) -> Response {
         let AuthzError::Forbidden(detail) = self;
         ProblemResponse::forbidden(detail).into_response()
     }
 }
-
 async fn enforce_role(
     State(state): State<Arc<AppState>>,
     minimum_role: Role,
@@ -27,7 +23,6 @@ async fn enforce_role(
 ) -> Result<Response, AuthzError> {
     let auth_user = req.extensions().get::<AuthUser>();
     let auth_disabled = req.extensions().get::<AuthDisabledMarker>().is_some();
-
     match auth_user {
         None if auth_disabled => Ok(next.run(req).await),
         None => {
@@ -51,12 +46,10 @@ async fn enforce_role(
                 });
                 return Err(e);
             }
-
             Ok(next.run(req).await)
         }
     }
 }
-
 pub async fn require_admin(
     state: State<Arc<AppState>>,
     req: Request,
@@ -64,7 +57,6 @@ pub async fn require_admin(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::Admin, req, next).await
 }
-
 pub async fn require_manager(
     state: State<Arc<AppState>>,
     req: Request,
@@ -72,7 +64,6 @@ pub async fn require_manager(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::Manager, req, next).await
 }
-
 pub async fn require_user(
     state: State<Arc<AppState>>,
     req: Request,
@@ -80,12 +71,12 @@ pub async fn require_user(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::User, req, next).await
 }
-
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
+    use crate::audit::NoopExporter;
+    use crate::middleware::oidc::{AuthUser, OidcValidator};
+    use crate::state::AppState;
     use axum::{
         Router,
         body::Body,
@@ -93,13 +84,10 @@ mod tests {
         middleware::{from_fn, from_fn_with_state},
         routing::get,
     };
-    use tower::ServiceExt;
-
-    use crate::audit::NoopExporter;
-    use crate::middleware::oidc::{AuthUser, OidcValidator};
-    use crate::state::AppState;
+    use std::str::FromStr;
     use svc::audit::PiiMode;
     use svc::{AuditService, ProvisioningPolicy, UserService};
+    use tower::ServiceExt;
 
     fn mock_state() -> Arc<AppState> {
         let cfg = config::AuthConfig {

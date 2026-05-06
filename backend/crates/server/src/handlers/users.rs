@@ -1,3 +1,7 @@
+use crate::middleware::oidc::AuthUser;
+use crate::middleware::{require_admin, require_manager};
+use crate::problem::ProblemResponse;
+use crate::state::AppState;
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query, State},
@@ -11,14 +15,9 @@ use dto::{
 };
 use snafu::Snafu;
 use std::sync::Arc;
-use uuid::Uuid;
-
-use crate::middleware::oidc::AuthUser;
-use crate::middleware::{require_admin, require_manager};
-use crate::problem::ProblemResponse;
-use crate::state::AppState;
 use svc::AuditEvent;
 use svc::UserServiceTrait;
+use uuid::Uuid;
 
 #[derive(Debug, Snafu)]
 pub enum UsersError {

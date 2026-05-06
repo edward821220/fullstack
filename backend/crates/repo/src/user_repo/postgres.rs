@@ -1,12 +1,11 @@
+use super::{Transaction, UserRepo};
+use crate::{Error, Result};
 use async_trait::async_trait;
 use model::role::Role;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use sqlx::Row;
 use uuid::Uuid;
-
-use super::{Transaction, UserRepo};
-use crate::{Error, Result};
 
 pub struct PostgresUserRepo {
     pool: sqlx::PgPool,
@@ -46,11 +45,15 @@ impl Transaction for PgTransaction {
 }
 
 fn to_user_pg(row: sqlx::postgres::PgRow) -> User {
+    let role_str: String = row.get("role");
+    let role = role_str
+        .parse()
+        .expect("database contained an invalid role value");
     User {
         id: row.get("id"),
         email: row.get("email"),
         display_name: row.get("display_name"),
-        role: row.get("role"),
+        role,
         email_verified: row.get("email_verified"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),

@@ -1,23 +1,19 @@
+use crate::policy::{OidcUserInfo, ProvisioningPolicy, derive_provider_from_issuer};
+use crate::{Error, Result};
 use async_trait::async_trait;
 use model::user::User;
 use repo::UserRepo;
 use repo::user_repo::Transaction;
 use tracing::instrument;
 use uuid::Uuid;
-
-use crate::policy::{OidcUserInfo, ProvisioningPolicy, derive_provider_from_issuer};
-use crate::{Error, Result};
-
 pub struct UserService<R: UserRepo> {
     repo: R,
 }
-
 impl<R: UserRepo> UserService<R> {
     pub fn new(repo: R) -> Self {
         Self { repo }
     }
 }
-
 #[async_trait]
 pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
     async fn get_user(&self, id: Uuid) -> Result<User>;
@@ -31,13 +27,11 @@ pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
     ) -> Result<User>;
     async fn update_user(&self, id: Uuid, display_name: Option<&str>) -> Result<User>;
     async fn delete_user(&self, id: Uuid) -> Result<()>;
-
     async fn provision_user(
         &self,
         oidc_info: &OidcUserInfo,
         policy: &ProvisioningPolicy,
     ) -> Result<User>;
-
     async fn sync_oidc_attributes(
         &self,
         id: Uuid,
@@ -46,7 +40,6 @@ pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
         email_verified: bool,
     ) -> Result<User>;
 }
-
 #[async_trait]
 impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
     #[instrument(skip(self), fields(user_id = %id))]
@@ -56,12 +49,10 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             .await?
             .ok_or(Error::NotFound { id })
     }
-
     #[instrument(skip(self))]
     async fn list_users(&self, page: u64, per_page: u64) -> Result<(Vec<User>, u64)> {
         self.repo.list(page, per_page).await.map_err(Into::into)
     }
-
     #[instrument(skip(self))]
     async fn create_user(
         &self,
@@ -80,17 +71,14 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             .create(email, display_name, role, email_verified)
             .await?)
     }
-
     #[instrument(skip(self), fields(user_id = %id))]
     async fn update_user(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
         Ok(self.repo.update(id, display_name).await?)
     }
-
     #[instrument(skip(self), fields(user_id = %id))]
     async fn delete_user(&self, id: Uuid) -> Result<()> {
         Ok(self.repo.delete(id).await?)
     }
-
     #[instrument(skip(self, oidc_info, policy), fields(issuer = %oidc_info.issuer))]
     async fn provision_user(
         &self,
@@ -98,14 +86,11 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         policy: &ProvisioningPolicy,
     ) -> Result<User> {
         policy.check_email_domain(&oidc_info.email)?;
-
         let provider = derive_provider_from_issuer(&oidc_info.issuer);
-
         let existing = self
             .repo
             .find_by_identity(provider, &oidc_info.issuer, &oidc_info.sub)
             .await?;
-
         if let Some((user, _identity)) = existing {
             let role = policy.resolve_role(&oidc_info.roles);
             return self
@@ -114,10 +99,8 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
                 .await
                 .map_err(Into::into);
         }
-
         let mut tx = self.repo.begin_transaction().await?;
         let role = policy.resolve_role(&oidc_info.roles);
-
         // === 交易邊界：find_by_email → create/sync → create_identity ===
         // 如果任何步驟失敗，`?` 會返回錯誤，tx 被 drop 時自動 rollback：
         // - Postgres: sqlx::Transaction drop 自動 rollback
@@ -126,7 +109,6 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             .repo
             .find_by_email_in_tx(&mut tx, &oidc_info.email)
             .await?;
-
         let user = match existing_user {
             Some(u) => {
                 tracing::info!(
@@ -160,7 +142,6 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
                     .await?
             }
         };
-
         self.repo
             .create_identity_in_tx(
                 &mut tx,
@@ -170,11 +151,9 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
                 &oidc_info.sub,
             )
             .await?;
-
         tx.commit().await?;
         Ok(user)
     }
-
     async fn sync_oidc_attributes(
         &self,
         id: Uuid,
@@ -188,14 +167,12 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             .map_err(Into::into)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use model::role::Role;
     use model::user_identity::UserIdentity;
     use time::OffsetDateTime;
-
-    use model::role::Role;
 
     fn resolve_role_with_policy(roles: &[&str]) -> Role {
         let policy = ProvisioningPolicy::new(vec![], "user".to_owned());

@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 serde.workspace = true
-sqlx = { workspace = true, default-features = false, features = ["postgres"] }
 utoipa.workspace = true
 uuid.workspace = true
 time.workspace = true
