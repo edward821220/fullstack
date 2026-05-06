@@ -1,4 +1,5 @@
-use super::{Error, Result, Transaction, UserRepo};
+use super::{Transaction, UserRepo};
+use crate::{Error, Result};
 use async_trait::async_trait;
 use model::user::User;
 use model::user_identity::UserIdentity;
@@ -53,7 +54,7 @@ impl Transaction for MockTransaction {
     }
 
     async fn rollback(self) -> Result<()> {
-        // 丟棄 staged 變更，原始資料不受影響
+        // Discard staged changes, original data remains unchanged
         Ok(())
     }
 }

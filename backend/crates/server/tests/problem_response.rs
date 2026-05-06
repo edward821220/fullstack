@@ -8,7 +8,7 @@ use server::problem::ProblemResponse;
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn unauthorised_should_return_401_with_problem_details() {
+async fn unauthorized_should_return_401_with_problem_details() {
     let app = Router::new().route(
         "/unauth",
         get(|| async {

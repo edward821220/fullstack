@@ -101,10 +101,6 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         }
         let mut tx = self.repo.begin_transaction().await?;
         let role = policy.resolve_role(&oidc_info.roles);
-        // === 交易邊界：find_by_email → create/sync → create_identity ===
-        // 如果任何步驟失敗，`?` 會返回錯誤，tx 被 drop 時自動 rollback：
-        // - Postgres: sqlx::Transaction drop 自動 rollback
-        // - MSSQL: 連線斷開時 SQL Server 自動 rollback 未完成交易
         let existing_user = self
             .repo
             .find_by_email_in_tx(&mut tx, &oidc_info.email)
@@ -312,7 +308,6 @@ mod tests {
         let policy = test_policy();
         let oidc_info = test_oidc_info();
 
-        // 先成功建立一次
         let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
         assert_eq!(user.email, "user@example.com");
 

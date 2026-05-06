@@ -624,7 +624,6 @@ mod tests {
 
         let (repo, _probe) = crate::connect(&config).await.unwrap();
 
-        // 使用交易完成完整的 JIT provisioning
         let mut tx = repo.begin_transaction().await.unwrap();
         let user = repo
             .create_in_tx(
@@ -650,7 +649,6 @@ mod tests {
 
         assert_eq!(identity.user_id, user.id);
 
-        // 驗證兩者都存在
         let found_user = repo.find_by_id(user.id).await.unwrap();
         assert!(found_user.is_some());
         let found_identity = repo
