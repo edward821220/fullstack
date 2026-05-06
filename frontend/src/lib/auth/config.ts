@@ -4,18 +4,25 @@ import "./types";
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 function validateAuthConfig() {
-  const isProduction = process.env.NODE_ENV === "production";
-  if (!isProduction) {
-    // Local development: skip strict validation to preserve dev experience.
+  const env = process.env.ENVIRONMENT ?? "production";
+  const isLax = env === "local" || env === "test" || env === "development";
+  if (isLax) {
+    // Local/test/development: skip strict validation to preserve dev experience.
+    // Staging and production must enforce fail-closed validation.
     return;
   }
 
-  const nextauthSecret = process.env.NEXTAUTH_SECRET;
-  // During `next build`, NODE_ENV is "production" but secrets are injected at
-  // runtime. Skip validation if secrets are absent to avoid build-time failures.
-  if (!nextauthSecret) return;
+  // During `next build`, the auth config module may be evaluated without runtime secrets.
+  // Next.js sets NEXT_PHASE to 'phase-production-build' during the build process.
+  const buildPhases = ["phase-production-build", "phase-export"];
+  const isBuildPhase = buildPhases.includes(process.env.NEXT_PHASE ?? "");
+  if (isBuildPhase) {
+    return;
+  }
 
-  if (nextauthSecret.length < 32) {
+  // Runtime production validation: must be fail-closed.
+  const nextauthSecret = process.env.NEXTAUTH_SECRET;
+  if (!nextauthSecret || nextauthSecret.length < 32) {
     throw new Error("NEXTAUTH_SECRET must be set and at least 32 characters long in production.");
   }
 

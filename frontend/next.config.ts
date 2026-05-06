@@ -25,8 +25,8 @@ const nextConfig: NextConfig = {
               "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
           },
           // Content-Security-Policy is intentionally omitted here.
-          // Production uses nonce-based CSP via middleware.ts (strict, no unsafe-inline/eval).
-          // Local development skips strict CSP in middleware to preserve dev experience.
+          // Production uses nonce-based CSP via proxy.ts (strict, no unsafe-inline/eval).
+          // Local development skips strict CSP in proxy to preserve dev experience.
         ],
       },
     ];

@@ -65,8 +65,34 @@ fn default_max_request_body_size() -> usize {
     1_048_576 // 1 MiB
 }
 
+fn default_environment() -> Environment {
+    Environment::Production
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Environment {
+    Local,
+    Development,
+    Staging,
+    #[default]
+    Production,
+}
+
+impl Environment {
+    pub fn is_local(&self) -> bool {
+        matches!(self, Environment::Local)
+    }
+
+    pub fn is_production(&self) -> bool {
+        matches!(self, Environment::Production)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
+    #[serde(default = "default_environment")]
+    pub environment: Environment,
     pub host: String,
     pub port: u16,
     pub timeout_seconds: u64,
@@ -443,11 +469,15 @@ impl AppConfig {
             })
     }
 
-    /// Returns true when the configuration indicates a local/development deployment.
+    /// Returns true when the deployment environment is explicitly `local`.
+    /// All non-local environments (development, staging, production) are treated
+    /// as "remote" for security checks that should not apply to a developer laptop.
     pub fn is_local(&self) -> bool {
-        !self.auth.enabled
-            || self.auth.issuer_url.contains("localhost")
-            || self.auth.issuer_url.contains("127.0.0.1")
+        self.server.environment.is_local()
+    }
+
+    pub fn is_production(&self) -> bool {
+        self.server.environment.is_production()
     }
 
     /// Resolve the database password, reading from file if `password_file` is set.
@@ -571,7 +601,7 @@ impl AppConfig {
             ];
             if weak_passwords.iter().any(|w| lower.contains(w)) || db_password.len() < 12 {
                 return Err(Error::Invalid {
-                    message: "database.password is too weak for production. \
+                    message: "database.password is too weak for non-local environments. \
                               Use a strong password or set password_file to a secret mount."
                         .to_owned(),
                 });
@@ -581,7 +611,7 @@ impl AppConfig {
         // Reject blanket trust_cert outside local development
         if self.database.trust_cert && !self.is_local() {
             return Err(Error::Invalid {
-                message: "database.trust_cert is not allowed in production. \
+                message: "database.trust_cert is not allowed in non-local environments. \
                           For bank/private-CA databases, set database.ca_cert_path to the enterprise CA bundle."
                     .to_owned(),
             });
@@ -624,8 +654,9 @@ impl AppConfig {
             });
         }
 
-        // Metrics fail-closed: require auth token when enabled outside local development
-        if self.observability.metrics_enabled && !self.is_local() {
+        // Metrics fail-closed: require auth token when enabled in production.
+        // Development and staging may run metrics without a token for debugging.
+        if self.observability.metrics_enabled && self.is_production() {
             let token_set = self
                 .observability
                 .metrics_auth_token
@@ -675,14 +706,14 @@ impl AppConfig {
                 if !self.is_local() {
                     if cfg.protocol == "udp" {
                         return Err(Error::Invalid {
-                            message: "audit.syslog.protocol 'udp' is not allowed in production. \
+                            message: "audit.syslog.protocol 'udp' is not allowed in non-local environments. \
                                       Use 'tcp+tls' for reliable, encrypted audit transport."
                                 .to_owned(),
                         });
                     }
                     if cfg.protocol == "tcp" && !cfg.tls_enabled {
                         return Err(Error::Invalid {
-                            message: "audit.syslog cleartext TCP is not allowed in production. \
+                            message: "audit.syslog cleartext TCP is not allowed in non-local environments. \
                                       Use 'tcp+tls' or enable tls_enabled."
                                 .to_owned(),
                         });
@@ -712,8 +743,9 @@ impl AppConfig {
                 // Enforce TLS for OTLP outside local development
                 if !self.is_local() && !cfg.endpoint.starts_with("https://") {
                     return Err(Error::Invalid {
-                        message: "audit.otel_logs.endpoint must use https:// in production."
-                            .to_owned(),
+                        message:
+                            "audit.otel_logs.endpoint must use https:// in non-local environments."
+                                .to_owned(),
                     });
                 }
             }
@@ -741,9 +773,29 @@ impl AppConfig {
                             .to_owned(),
                     });
                 }
+                if !self.grpc.auth_enabled {
+                    return Err(Error::Invalid {
+                        message: "grpc.auth_enabled must be true in non-local environments. \
+                                  Service-to-service gRPC requires JWT validation."
+                            .to_owned(),
+                    });
+                }
+                let has_ca = self
+                    .grpc
+                    .tls
+                    .ca_cert_path
+                    .as_ref()
+                    .is_some_and(|s| !s.is_empty());
+                if !has_ca {
+                    return Err(Error::Invalid {
+                        message: "grpc.tls.ca_cert_path must be set in non-local environments. \
+                                  Service-to-service gRPC requires mTLS client CA verification."
+                            .to_owned(),
+                    });
+                }
             } else {
                 return Err(Error::Invalid {
-                    message: "grpc.tls.enabled must be true in production. \
+                    message: "grpc.tls.enabled must be true in non-local environments. \
                               For local development, disable grpc or keep it unencrypted."
                         .to_owned(),
                 });
@@ -783,6 +835,7 @@ mod tests {
     fn make_config() -> AppConfig {
         AppConfig {
             server: ServerConfig {
+                environment: Environment::Local,
                 host: "127.0.0.1".to_owned(),
                 port: 3001,
                 timeout_seconds: 30,
@@ -929,9 +982,7 @@ mod tests {
     fn validate_should_reject_trust_cert_in_production() {
         let mut config = make_config();
         config.database.trust_cert = true;
-        // auth disabled => local mode; enable auth with non-local issuer => production mode
-        config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
+        config.server.environment = Environment::Production;
         assert!(config.validate().is_err());
     }
 
@@ -966,9 +1017,7 @@ mod tests {
     fn validate_should_require_metrics_auth_token_in_production() {
         let mut config = make_config();
         config.observability.metrics_enabled = true;
-        config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
-        config.auth.allowed_email_domains = vec!["bank.com".to_owned()];
+        config.server.environment = Environment::Production;
         assert!(config.validate().is_err());
 
         config.observability.metrics_auth_token = Some("secret".to_owned());
@@ -980,7 +1029,7 @@ mod tests {
         let mut config = make_config();
         config.observability.metrics_enabled = false;
         config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
+        config.server.environment = Environment::Production;
         config.auth.allowed_email_domains = vec![];
         assert!(config.validate().is_err());
 
@@ -996,9 +1045,7 @@ mod tests {
     fn validate_should_reject_unreliable_audit_in_production() {
         let mut config = make_config();
         config.observability.metrics_enabled = false;
-        config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
-        config.auth.allowed_email_domains = vec!["bank.com".to_owned()];
+        config.server.environment = Environment::Production;
         config.audit.exporter = "syslog".to_owned();
         config.audit.syslog = Some(SyslogConfig {
             host: "logs.bank.com".to_owned(),
@@ -1023,9 +1070,7 @@ mod tests {
     fn validate_should_require_https_for_otlp_audit_in_production() {
         let mut config = make_config();
         config.observability.metrics_enabled = false;
-        config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
-        config.auth.allowed_email_domains = vec!["bank.com".to_owned()];
+        config.server.environment = Environment::Production;
         config.audit.exporter = "otel-logs".to_owned();
         config.audit.otel_logs = Some(OtelLogsConfig {
             endpoint: "http://collector.bank.com:4318/v1/logs".to_owned(),
@@ -1044,15 +1089,57 @@ mod tests {
     fn validate_should_require_grpc_tls_in_production() {
         let mut config = make_config();
         config.observability.metrics_enabled = false;
-        config.auth.enabled = true;
-        config.auth.issuer_url = "https://idp.bank.com".to_owned();
-        config.auth.allowed_email_domains = vec!["bank.com".to_owned()];
+        config.server.environment = Environment::Production;
         config.grpc.enabled = true;
         assert!(config.validate().is_err());
 
         config.grpc.tls.enabled = true;
         config.grpc.tls.cert_path = "/tmp/grpc.crt".to_owned();
         config.grpc.tls.key_path = "/tmp/grpc.key".to_owned();
+        config.grpc.auth_enabled = true;
+        config.grpc.tls.ca_cert_path = Some("/tmp/grpc-ca.crt".to_owned());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_should_reject_grpc_prod_with_tls_but_no_auth() {
+        let mut config = make_config();
+        config.observability.metrics_enabled = false;
+        config.server.environment = Environment::Production;
+        config.grpc.enabled = true;
+        config.grpc.tls.enabled = true;
+        config.grpc.tls.cert_path = "/tmp/grpc.crt".to_owned();
+        config.grpc.tls.key_path = "/tmp/grpc.key".to_owned();
+        config.grpc.tls.ca_cert_path = Some("/tmp/grpc-ca.crt".to_owned());
+        // auth_enabled is false
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_reject_grpc_prod_with_tls_but_no_client_ca() {
+        let mut config = make_config();
+        config.observability.metrics_enabled = false;
+        config.server.environment = Environment::Production;
+        config.grpc.enabled = true;
+        config.grpc.tls.enabled = true;
+        config.grpc.tls.cert_path = "/tmp/grpc.crt".to_owned();
+        config.grpc.tls.key_path = "/tmp/grpc.key".to_owned();
+        config.grpc.auth_enabled = true;
+        // ca_cert_path is None
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_should_accept_grpc_prod_with_tls_mtls_ca_and_auth() {
+        let mut config = make_config();
+        config.observability.metrics_enabled = false;
+        config.server.environment = Environment::Production;
+        config.grpc.enabled = true;
+        config.grpc.tls.enabled = true;
+        config.grpc.tls.cert_path = "/tmp/grpc.crt".to_owned();
+        config.grpc.tls.key_path = "/tmp/grpc.key".to_owned();
+        config.grpc.auth_enabled = true;
+        config.grpc.tls.ca_cert_path = Some("/tmp/grpc-ca.crt".to_owned());
         assert!(config.validate().is_ok());
     }
 }

@@ -95,7 +95,7 @@ project-root/
 ### Backend
 
 - **Default DB**: MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.host` / `database.database`.
-- **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `AppConfig::validate()` panics on hardcoded passwords, missing TLS certs, and HTTP issuer URLs outside localhost. Secrets: `database.password_file` supports Docker/K8s secret mounts; weak password rejection outside local.
+- **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `server.environment` (`local` | `development` | `staging` | `production`) is the single source of truth for environment classification. Security checks use this field, not URL heuristics. `AppConfig::validate()` panics on hardcoded passwords, missing TLS certs, and HTTP issuer URLs outside localhost. Secrets: `database.password_file` supports Docker/K8s secret mounts; weak password rejection outside local.
 - **Migrations**: refinery (supports both PostgreSQL and MSSQL). Embedded in server binary. `server migrate` subcommand runs migrations standalone. `database.run_migrations_on_startup` controls whether migrations run on serve (default `false` in prod config, `true` in local).
 - **Error handling**: SNAFU per-layer enums. `repo::Error` → `svc::Error` → `api::UsersError`.
 - **API responses**: Success = raw JSON (no envelope), HTTP 2xx. Error = JSON with `type`/`title`/`status`/`detail` fields (RFC 9457 Problem Details subset), HTTP 4xx/5xx.
@@ -119,7 +119,7 @@ project-root/
 - **State**: Zustand (UI state), SWR (server cache).
 - **Routing**: Next.js App Router. `(auth)` = public route group (no URL impact), `dashboard/` = protected route segment.
 - **Styling**: Tailwind CSS v4 (CSS-first config).
-- **CSP**: Production uses nonce-based CSP via `middleware.ts`. Nonce is propagated to Server Components via `request.headers.set("x-nonce", ...)`. Local dev skips strict CSP.
+- **CSP**: Production uses nonce-based CSP via `proxy.ts`. Nonce is propagated to Server Components via copied request headers. Local dev skips strict CSP.
 
 ---
 
