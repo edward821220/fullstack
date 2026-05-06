@@ -10,9 +10,8 @@ export async function getServerAccessToken(): Promise<string | undefined> {
   const cookieStore = await cookies();
   const token = await getToken({
     req: {
-      headers: {
-        cookie: cookieStore.toString(),
-      },
+      cookies: cookieStore,
+      headers: new Headers(),
     } as unknown as Parameters<typeof getToken>[0]["req"],
     secret: process.env.NEXTAUTH_SECRET,
   });

@@ -85,6 +85,8 @@ pub async fn run_migrations(config: &AppConfig) -> Result<(), BootstrapError> {
 /// Orchestrate the full server lifecycle: tracing, migrations, DB connection,
 /// REST + gRPC server startup, graceful shutdown.
 pub async fn run(config: AppConfig) -> Result<(), BootstrapError> {
+    infra::ensure_jwt_crypto_provider();
+
     let telemetry = init_tracing(&config).map_err(|e| BootstrapError::Telemetry(e.to_string()))?;
 
     if config.database.run_migrations_on_startup {

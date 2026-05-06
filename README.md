@@ -125,15 +125,15 @@ mise run check
 |-----|-------------|
 | `http://localhost:3000` | Frontend |
 | `http://localhost:3001/api/v1/users` | REST API |
-| `http://localhost:3001/docs` | API docs (Scalar) |
+| `http://localhost:3001/docs` | API docs (Scalar, only when `server.docs_enabled: true`) |
 | `http://localhost:3001/health` | Liveness |
 | `http://localhost:3001/health/ready` | Readiness (DB check) |
-| `http://localhost:3001/metrics` | Prometheus metrics |
+| `http://localhost:3001/metrics` | Prometheus metrics (only when `observability.metrics_enabled: true`) |
 | `grpc://localhost:50051` | gRPC (only when `grpc.enabled: true` or when running `grpc-server`) |
 
 ## Configuration
 
-Backend config lives in `backend/config/default.yaml` (production-safe defaults). Override via `config/local.yaml` (gitignored) or `APP_*` env vars:
+Backend config lives in `backend/config/default.yaml` (production-safe defaults). Override via `backend/config/local.yaml` (gitignored) or `APP_*` env vars:
 
 ```bash
 APP_SERVER__PORT=3002
@@ -145,7 +145,7 @@ APP_OBSERVABILITY__OTLP__ENABLED=true
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
 
-gRPC is disabled by default in both `backend/config/default.yaml` and `backend/config/local.yaml`. Enable it by setting `grpc.enabled: true` in `backend/config/local.yaml`, or run the standalone gRPC binary from `backend/` with `cargo run --bin grpc-server`.
+gRPC is disabled by default in both `backend/config/default.yaml` and `backend/config/local.example.yaml`. Enable it by setting `grpc.enabled: true` in your local `backend/config/local.yaml`, or run the standalone gRPC binary from `backend/` with `cargo run --bin grpc-server`.
 
 Frontend local environment lives in `frontend/.env.local`, copied from `frontend/.env.example`.
 

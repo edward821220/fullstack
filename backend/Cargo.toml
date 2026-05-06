@@ -88,7 +88,7 @@ opentelemetry_sdk = "0.31"
 # Error handling
 snafu = "0.9"
 # Auth
-jsonwebtoken = "10"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 openidconnect = { version = "4", default-features = false, features = [
   "reqwest",
   "rustls-tls",

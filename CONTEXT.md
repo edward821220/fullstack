@@ -27,7 +27,7 @@ Keep setup commands and implementation checklists in `README.md`, `AGENTS.md`, o
 - **Infra** — The shared infrastructure crate. Holds code used by multiple server binaries (`server`, `grpc-server`): telemetry initialization (`init_tracing`), health checkers (`DbHealthChecker`, `AlwaysHealthy`), and audit exporters (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`). Depends on `config` and `svc`.
 - **Combined server** — The `server` binary. Owns the main bootstrap flow for REST and may also co-host gRPC when `grpc.enabled: true`.
 - **Standalone gRPC server** — The `grpc-server` binary. Runs only the gRPC service and reuses `infra` for shared runtime concerns.
-- **AppState** — The application's shared state held by the HTTP/gRPC servers. Contains `UserService`, `OidcValidator`, `ProvisioningPolicy`, and `AuditService`.
+- **AppState** — The shared state for the HTTP server. Contains `UserService`, the health checker, `OidcValidator`, `ProvisioningPolicy`, and `AuditService`.
 - **ProblemResponse** — The RFC 9457 Problem Details error response format used across all HTTP APIs.
 - **AuditEvent** — Security-relevant events emitted by `svc` and `server` layers. Lives in `svc::audit` so business logic can record audits without knowing HTTP.
 - **AuditExporter** — Strategy-pattern trait in `svc::audit`. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit`. `infra::create_audit_exporter()` is the shared factory used by both REST and gRPC servers.

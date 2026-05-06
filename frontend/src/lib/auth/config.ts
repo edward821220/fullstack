@@ -112,7 +112,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.AUTH_OIDC_SECRET ?? "",
       issuer,
       wellKnown: wellKnownUrl,
-      authorization: { params: { scope: "openid email profile offline_access" } },
+      authorization: { params: { scope: "openid email profile groups offline_access" } },
       profile(profile) {
         return {
           id: profile.sub ?? profile.email,

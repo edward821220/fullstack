@@ -16,6 +16,8 @@ pub async fn serve(
     health_checker: Arc<dyn svc::HealthChecker>,
     addr: SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    infra::ensure_jwt_crypto_provider();
+
     let audit_exporter =
         infra::create_audit_exporter(&config.audit, &config.observability.service_name);
     let _audit_service = svc::AuditService::new(audit_exporter, PiiMode::Redact);

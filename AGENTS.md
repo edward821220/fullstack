@@ -54,7 +54,7 @@ project-root/
 │   ├── rustfmt.toml          # Import ordering: std → external → workspace → super → crate
 │   ├── config/
 │   │   ├── default.yaml      # Production-safe defaults (checked in)
-│   │   └── local.example.yaml # Local override template (gitignored)
+│   │   └── local.example.yaml # Local override template (checked in; copy to local.yaml)
 │   └── crates/
 │       ├── config/           # YAML+env config (figment). AppConfig struct.
 │       ├── dto/              # Shared DTOs. Request/Response, utoipa ToSchema.
@@ -69,7 +69,8 @@ project-root/
 ├── frontend/                 # pnpm workspace
 │   └── src/
 │       ├── app/              # Next.js App Router
-│       │   ├── (auth)/       # Login, OIDC callback
+│       │   ├── (auth)/       # Public auth-facing pages (for example login)
+│       │   ├── api/          # NextAuth handlers + backend proxy routes
 │       │   └── dashboard/    # Protected pages
 │       ├── components/
 │       │   ├── ui/           # shadcn/ui components
@@ -77,7 +78,7 @@ project-root/
 │       ├── lib/
 │       │   ├── api/          # axios client + typed endpoints
 │       │   └── auth/         # next-auth config (generic OIDC)
-│       ├── schemas/          # Zod schemas + inferred TypeScript types
+│       ├── schemas/          # Runtime transforms/derived schemas layered over generated Zod
 │       ├── hooks/            # SWR data fetching hooks
 │       ├── stores/           # Zustand stores (UI state)
 │       └── styles/           # Tailwind CSS globals
@@ -96,7 +97,7 @@ project-root/
 ### Backend
 
 - **Default DB**: MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.host` / `database.database`.
-- **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `server.environment` (`local` | `development` | `staging` | `production`) is the single source of truth for environment classification. Security checks use this field, not URL heuristics. `AppConfig::validate()` panics on hardcoded passwords, missing TLS certs, and HTTP issuer URLs outside localhost. Secrets: `database.password_file` supports Docker/K8s secret mounts; weak password rejection outside local.
+- **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `server.environment` (`local` | `development` | `staging` | `production`) is the single source of truth for environment classification. Security checks use this field, not URL heuristics. `AppConfig::validate()` fails closed on weak non-local DB passwords, missing TLS certs, invalid metrics/auth settings, and HTTP issuer URLs outside localhost. Secrets: `database.password_file` supports Docker/K8s secret mounts.
 - **Migrations**: refinery (supports both PostgreSQL and MSSQL). Embedded in server binary. `server migrate` subcommand runs migrations standalone. `database.run_migrations_on_startup` controls whether migrations run on serve (default `false` in prod config, `true` in local).
 - **Error handling**: SNAFU per-layer enums. `repo::Error` → `svc::Error` → `server::error::AppError`. `AppError` implements `axum::response::IntoResponse`, mapping each `svc::Error` variant to the appropriate HTTP status code and RFC 9457 Problem Details JSON.
 - **API responses**: Success = raw JSON (no envelope), HTTP 2xx. Error = JSON with `type`/`title`/`status`/`detail` fields (RFC 9457 Problem Details subset), HTTP 4xx/5xx.
@@ -106,7 +107,7 @@ project-root/
 - **Auth**: OIDC Bearer token. JWT validated via JWKS (jsonwebtoken crate, manual discovery or manual endpoints). Algorithm restricted to `auth.allowed_algorithms` allowlist. Supports `auth.require_email_verified` and `auth.clock_skew_seconds`. JIT user provisioning with email domain whitelist and role resolution via `ProvisioningPolicy`. **Auth is enabled by default**; local development requires `local.yaml` to explicitly disable it.
 - **Authorization**: IdP-driven RBAC. The IdP is the authority for role assignment. On each request with a valid token, the middleware syncs the user's `role`, `display_name`, and `email_verified` from the current OIDC claims. Role is derived from claims via `ProvisioningPolicy::resolve_role()`, which maps well-known role names (admin/administrator/superuser → admin, manager/supervisor → manager) from the configured claim source (`roles` or `groups`). Hierarchical: Admin > Manager > User. Routes: list/get/update require Manager+; create/delete require Admin. When auth is disabled, all requests pass through.
 - **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented under `repo/src/user_repo/`. Adapter-specific testcontainers tests live in the same file as the adapter (`#[cfg(test)]`). A `test-helpers` feature provides `MockUserRepo` for upstream unit tests.
-- **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Production requires `grpc.tls.enabled: true` (mTLS when `ca_cert_path` is set). `grpc.auth_enabled` adds real JWT validation via sync JWKS cache with background refresh.
+- **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Non-local environments require `grpc.tls.enabled: true`, `grpc.auth_enabled: true`, and `grpc.tls.ca_cert_path` for mTLS client verification. `grpc.auth_enabled` adds real JWT validation via sync JWKS cache with background refresh.
 - **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit` and are constructed via `infra::create_audit_exporter()` so both REST and gRPC binaries share the same factory logic. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields.
 - **Optimistic Locking**: `users` table has a `version` column. `UPDATE` increments `version` and checks `WHERE id = ? AND version = ?`, returning `409 CONFLICT` on stale data.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
@@ -115,7 +116,7 @@ project-root/
 
 - **Auth**: next-auth with generic OIDC. JWT session strategy. Auto-redirect to IdP.
 - **API calls**: Browser-side axios points at `/api/proxy`; the Next.js BFF proxy reads the encrypted next-auth JWT cookie server-side and attaches the Bearer token before forwarding to the backend. No access token is exposed to client JavaScript.
-- **Validation**: Zod schemas in `schemas/`. Single source for validation + types.
+- **Validation**: Generated Zod schemas live in `frontend/src/lib/api/gen/zod.gen.ts`. `frontend/src/schemas/` is only for runtime transforms or derived schemas that generation should not own.
 - **API types**: Single authority — TypeScript types are derived from the backend OpenAPI spec. Run `mise run openapi:gen` after DTO or `utoipa` route changes to regenerate `docs/openapi.json`, `frontend/src/lib/api/gen/types.gen.ts`, and `frontend/src/lib/api/gen/zod.gen.ts`.
 - **State**: Zustand (UI state), SWR (server cache).
 - **Routing**: Next.js App Router. `(auth)` = public route group (no URL impact), `dashboard/` = protected route segment.

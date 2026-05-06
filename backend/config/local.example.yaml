@@ -32,7 +32,7 @@ database:
   run_migrations_on_startup: true
 
 auth:
-  enabled: false
+  enabled: true
   issuer_url: "http://localhost:8080/dex"
   audience:
     - "fullstack-template"

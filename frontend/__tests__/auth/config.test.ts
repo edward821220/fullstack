@@ -22,12 +22,13 @@ describe("Auth config", () => {
     expect(authOptions.pages?.signOut).toBe("/login");
   });
 
-  it("OIDC provider should request openid email profile offline_access scope", () => {
+  it("OIDC provider should request openid email profile groups offline_access scope", () => {
     const provider = authOptions.providers[0];
     const p = provider as { authorization?: { params?: { scope?: string } } };
     expect(p.authorization?.params?.scope).toContain("openid");
     expect(p.authorization?.params?.scope).toContain("email");
     expect(p.authorization?.params?.scope).toContain("profile");
+    expect(p.authorization?.params?.scope).toContain("groups");
     expect(p.authorization?.params?.scope).toContain("offline_access");
   });
 

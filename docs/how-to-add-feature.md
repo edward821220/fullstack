@@ -84,7 +84,9 @@ Create `order_repo/` following the same pattern as `user_repo/`.
 
 ```
 repo/src/order_repo/
-  mod.rs        — trait definition
+  mod.rs        — module exports
+  trait.rs      — trait definition
+  any.rs        — optional type-erased wrapper if the feature needs multi-adapter bootstrap
   mssql.rs      — MSSQL adapter
   postgres.rs   — PostgreSQL adapter
   test_helpers.rs — MockOrderRepo (behind #[cfg(feature = "test-helpers")])
@@ -94,7 +96,10 @@ Trait example:
 
 ```rust
 #[async_trait]
-pub trait OrderRepo: Send + Sync {
+pub trait OrderRepo: Send + Sync + Clone {
+    type Tx: Transaction;
+
+    async fn begin_transaction(&self) -> Result<Self::Tx>;
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Order>>;
     async fn create(&self, user_id: Uuid, amount: i64, currency: &str) -> Result<Order>;
     async fn list(&self, page: u64, per_page: u64) -> Result<(Vec<Order>, u64)>;
@@ -106,19 +111,21 @@ Export in `repo/src/lib.rs`:
 ```rust
 pub mod order_repo;
 pub use order_repo::{MssqlOrderRepo, PostgresOrderRepo, OrderRepo};
+// If the feature needs runtime adapter erasure at bootstrap boundaries:
+// pub use order_repo::AnyOrderRepo;
 ```
 
 ### 4. Service (`backend/crates/svc/src/`)
 
-Create `order_service.rs` and define `OrderServiceTrait`.
+Create `order_service.rs` and follow the same generic pattern as `UserService<R: UserRepo>`.
 
 ```rust
-pub struct OrderService {
-    repo: Box<dyn OrderRepo>,
+pub struct OrderService<R: OrderRepo> {
+    repo: R,
 }
 
 #[async_trait]
-pub trait OrderServiceTrait: Send + Sync {
+pub trait OrderServiceTrait<R: OrderRepo>: Send + Sync {
     async fn get_order(&self, id: Uuid) -> Result<Order>;
     async fn create_order(&self, user_id: Uuid, amount: i64, currency: &str) -> Result<Order>;
     async fn list_orders(&self, page: u64, per_page: u64) -> Result<(Vec<Order>, u64)>;
@@ -219,16 +226,17 @@ If the feature also needs Server Component access, add `frontend/src/lib/api/ord
 
 **No need to hand-write Zod schemas.** Frontend Zod schemas are auto-generated from the OpenAPI spec.
 
-If you need to add a new schema on the frontend (e.g., for a new feature), first add utoipa validation annotations to the backend DTO:
+If you need frontend runtime validation for a new feature, first add utoipa validation annotations to the backend DTO:
 
 ```rust
 // backend/crates/dto/src/lib.rs
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateOrderRequest {
-    #[schema(format = Email, min_length = 1, max_length = 200)]
-    pub email: String,
-    #[schema(min_length = 1, max_length = 100)]
-    pub display_name: String,
+    pub user_id: Uuid,
+    #[schema(minimum = 1)]
+    pub amount: i64,
+    #[schema(min_length = 3, max_length = 3, example = "USD")]
+    pub currency: String,
 }
 ```
 
@@ -237,8 +245,9 @@ Then run `mise run openapi:gen`, and the frontend will automatically get the cor
 ```ts
 // frontend/src/lib/api/gen/zod.gen.ts (auto-generated)
 export const zCreateOrderRequest = z.object({
-  email: z.email().min(1).max(200),
-  display_name: z.string().min(1).max(100),
+  user_id: z.uuid(),
+  amount: z.int().gte(1),
+  currency: z.string().min(3).max(3),
 });
 ```
 
@@ -249,7 +258,9 @@ Only add code to `frontend/src/schemas/index.ts` when you need runtime transform
 import { zCreateOrderRequest } from "@/lib/api/gen/zod.gen";
 import { z } from "zod/v4";
 
-export const createOrderSchema = zCreateOrderRequest;
+export const createOrderSchema = zCreateOrderRequest.extend({
+  currency: zCreateOrderRequest.shape.currency.transform((value) => value.toUpperCase()),
+});
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 ```
 
@@ -334,8 +345,8 @@ export default defineConfig({
 
 - [ ] Model struct in `model/src/<feature>.rs`
 - [ ] DTOs in `dto/src/lib.rs` with `ToSchema`
-- [ ] Repo trait + adapters in `repo/src/<feature>_repo/`
-- [ ] Service trait + impl in `svc/src/<feature>_service.rs`
+- [ ] Repo trait + adapters in `repo/src/<feature>_repo/` (and `any.rs` if you need type erasure at bootstrap boundaries)
+- [ ] Service trait + impl in `svc/src/<feature>_service.rs` using the same generic seam pattern as `UserService<R>`
 - [ ] Handler routes in `server/src/handlers/<feature>.rs`
 - [ ] Register handler in `handlers/mod.rs`
 - [ ] Wire routes in `rest_server.rs`
@@ -345,12 +356,13 @@ export default defineConfig({
 
 ### Frontend
 
-- [ ] Zod schema in `schemas/index.ts`
-- [ ] API functions in `lib/api/<feature>.ts`
+- [ ] Generated Zod schema available via `lib/api/gen/zod.gen.ts`
+- [ ] Optional runtime transform or derived schema in `schemas/index.ts`
+- [ ] API functions in `lib/api/<feature>/client.ts` and optional `lib/api/<feature>/server.ts`
 - [ ] SWR hook in `hooks/use<Feature>.ts`
 - [ ] Components in `components/features/<feature>/`
 - [ ] Pages in `app/dashboard/<feature>/`
-- [ ] Tests in `__tests__/<feature>.test.ts`
+- [ ] Tests under `frontend/__tests__/` for the new API, hooks, schemas, or routes
 - [ ] Run `mise run openapi:gen` to sync types
 
 ### Cross-Cutting

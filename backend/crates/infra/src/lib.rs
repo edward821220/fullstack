@@ -3,9 +3,23 @@ pub mod health_checker;
 pub mod telemetry;
 
 use config::AuditConfig;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
+
+static JWT_CRYPTO_PROVIDER_INIT: Once = Once::new();
+
+/// Install the jsonwebtoken crypto provider once per process before any JWT
+/// verification occurs.
+pub fn ensure_jwt_crypto_provider() {
+    JWT_CRYPTO_PROVIDER_INIT.call_once(|| {
+        let result = jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER.install_default();
+        debug_assert!(
+            result.is_ok(),
+            "jsonwebtoken crypto provider install should happen once"
+        );
+    });
+}
 
 /// Factory function for creating an audit exporter from configuration.
 ///
