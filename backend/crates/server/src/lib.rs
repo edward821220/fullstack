@@ -1,13 +1,9 @@
-pub mod audit;
 pub mod authz;
 pub mod bootstrap;
 pub mod error;
-pub mod grpc;
 pub mod handlers;
-pub mod health_checker;
 pub mod middleware;
 pub mod openapi;
 pub mod problem;
 pub mod rest_server;
 pub mod state;
-pub mod telemetry;

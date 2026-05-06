@@ -3,10 +3,10 @@ use axum::{
     http::{Request, StatusCode},
     middleware::from_fn,
 };
+use infra::{audit::NoopExporter, health_checker::AlwaysHealthy};
 use server::handlers::users::routes as users_routes;
 use server::middleware::oidc::OidcValidator;
 use server::state::AppState;
-use server::{audit::NoopExporter, health_checker::AlwaysHealthy};
 use std::sync::Arc;
 use svc::audit::PiiMode;
 use svc::{AuditService, ProvisioningPolicy, UserService, UserServiceTrait};

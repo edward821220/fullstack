@@ -1,4 +1,3 @@
-use crate::audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
 use crate::handlers::{health, users};
 use crate::middleware::OidcValidator;
 use crate::middleware::oidc::layer::oidc_middleware;
@@ -59,37 +58,6 @@ async fn security_headers_middleware(
     }
     response
 }
-fn create_audit_exporter(
-    config: &config::AuditConfig,
-    service_name: &str,
-) -> Arc<dyn svc::AuditExporter> {
-    match config.exporter.as_str() {
-        "syslog" => {
-            let cfg = config.syslog.as_ref().expect("syslog config validated");
-            Arc::new(SyslogExporter::new(
-                cfg.host.clone(),
-                cfg.port,
-                cfg.protocol.clone(),
-                &cfg.facility,
-                service_name.to_owned(),
-                std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_owned()),
-                cfg.tls_enabled,
-            ))
-        }
-        "otel-logs" => {
-            let cfg = config
-                .otel_logs
-                .as_ref()
-                .expect("otel_logs config validated");
-            Arc::new(OtelLogsExporter::new(
-                cfg.endpoint.clone(),
-                cfg.timeout_seconds,
-                service_name.to_owned(),
-            ))
-        }
-        _ => Arc::new(NoopExporter),
-    }
-}
 pub async fn serve_rest(
     config: AppConfig,
     repo: AnyUserRepo,
@@ -104,7 +72,8 @@ pub async fn serve_rest(
         config::PiiMode::Full => PiiMode::Full,
         config::PiiMode::Redact => PiiMode::Redact,
     };
-    let audit_exporter = create_audit_exporter(&config.audit, &config.observability.service_name);
+    let audit_exporter =
+        infra::create_audit_exporter(&config.audit, &config.observability.service_name);
     let audit_service = svc::AuditService::new(audit_exporter, pii_mode);
     let app_state = Arc::new(AppState {
         svc: svc.clone(),
@@ -155,9 +124,7 @@ pub async fn serve_rest(
                 .finish()
                 .expect("valid governor config"),
         );
-        api_routes.layer(GovernorLayer {
-            config: governor_conf,
-        })
+        api_routes.layer(GovernorLayer::new(governor_conf))
     } else {
         api_routes
     };

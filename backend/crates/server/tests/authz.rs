@@ -32,11 +32,11 @@ fn mock_state() -> Arc<server::state::AppState> {
         repo::MockUserRepo::new(),
     )));
     let provisioning = svc::ProvisioningPolicy::new(vec![], "user".to_owned());
-    let audit_exporter: Arc<dyn svc::AuditExporter> = Arc::new(server::audit::NoopExporter);
+    let audit_exporter: Arc<dyn svc::AuditExporter> = Arc::new(infra::audit::NoopExporter);
     let audit = svc::AuditService::new(audit_exporter, PiiMode::Full);
     Arc::new(server::state::AppState {
         svc,
-        health: Arc::new(server::health_checker::AlwaysHealthy),
+        health: Arc::new(infra::health_checker::AlwaysHealthy),
         oidc,
         provisioning,
         audit,

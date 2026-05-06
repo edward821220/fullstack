@@ -1,5 +1,5 @@
-use crate::health_checker::DbHealthChecker;
 use config::AppConfig;
+use infra::health_checker::DbHealthChecker;
 use std::sync::Arc;
 use std::time::Duration;
 

@@ -72,7 +72,6 @@ pub async fn require_user(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audit::NoopExporter;
     use crate::middleware::oidc::{AuthUser, OidcValidator};
     use crate::state::AppState;
     use axum::{
@@ -82,6 +81,7 @@ mod tests {
         middleware::{from_fn, from_fn_with_state},
         routing::get,
     };
+    use infra::audit::NoopExporter;
     use std::str::FromStr;
     use svc::audit::PiiMode;
     use svc::{AuditService, ProvisioningPolicy, UserService};
@@ -112,7 +112,7 @@ mod tests {
         let audit = AuditService::new(audit_exporter, PiiMode::Full);
         Arc::new(AppState {
             svc,
-            health: Arc::new(crate::health_checker::AlwaysHealthy),
+            health: Arc::new(infra::health_checker::AlwaysHealthy),
             oidc,
             provisioning,
             audit,

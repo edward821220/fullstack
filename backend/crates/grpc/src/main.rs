@@ -1,5 +1,7 @@
 use config::AppConfig;
-use server::{grpc, health_checker::DbHealthChecker, telemetry::init_tracing};
+use grpc::serve;
+use infra::health_checker::DbHealthChecker;
+use infra::telemetry::init_tracing;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tracing::info!("Standalone gRPC server listening on {}", addr);
 
-    grpc::serve(config, repo, health, addr).await?;
+    serve(config, repo, health, addr).await?;
 
     telemetry.shutdown();
 

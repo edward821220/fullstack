@@ -1,6 +1,7 @@
 use super::proxy::AuditEventProxy;
 use std::time::Duration;
 use svc::audit::{AuditError, AuditEvent, AuditExporter};
+
 /// OTLP Logs exporter.
 /// Sends structured JSON over HTTP to an OTEL Collector.
 pub struct OtelLogsExporter {
@@ -205,7 +206,7 @@ mod tests {
         let received = Arc::new(Mutex::new(None));
 
         let app = {
-            let rx = Arc::clone(&received);
+            let rx: Arc<tokio::sync::Mutex<Option<serde_json::Value>>> = Arc::clone(&received);
             axum::Router::new().route(
                 "/v1/logs",
                 axum::routing::post(

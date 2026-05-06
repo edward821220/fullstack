@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use config::AppConfig;
-use server::grpc;
+use grpc::serve as grpc_serve;
+use infra::telemetry::init_tracing;
 use server::openapi::ApiDoc;
-use server::telemetry::init_tracing;
 use std::time::Duration;
 use utoipa::OpenApi;
 
@@ -130,7 +130,7 @@ async fn main() {
         let config_clone2 = config.clone();
         Some(tokio::spawn(async move {
             tracing::info!("gRPC server listening on {}", grpc_addr);
-            if let Err(e) = grpc::serve(config_clone2, grpc_repo, grpc_health, grpc_addr).await {
+            if let Err(e) = grpc_serve(config_clone2, grpc_repo, grpc_health, grpc_addr).await {
                 tracing::error!("gRPC server error: {e}");
             }
         }))
