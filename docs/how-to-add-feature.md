@@ -16,7 +16,7 @@ This guide walks through adding a new domain feature (e.g. `orders`, `transactio
 
 ## Backend — Add a Vertical Slice
 
-The backend is a Cargo workspace with six layers. A new feature touches all of them.
+The backend is a Cargo workspace with six domain layers plus a shared infrastructure crate (`infra`). A new feature touches the six domain layers; `infra` only changes when you add a new cross-cutting concern (e.g. a new audit exporter or health checker).
 
 ### 1. Model (`backend/crates/model/src/`)
 
@@ -187,23 +187,33 @@ pub struct ApiDoc;
 
 ## Frontend — Add a Feature Module
 
-Use the `users` feature as a reference. A new feature lives in three places:
+Use the `users` feature as a reference. A new feature usually touches:
 
-### 1. API Layer (`frontend/src/lib/api/`)
+### 1. API Layer (`frontend/src/lib/api/<feature>/`)
 
 ```ts
-// frontend/src/lib/api/orders.ts
-import { clientFetch, clientMutate } from "@/lib/api/fetcher";
+// frontend/src/lib/api/orders/client.ts
+import * as api from "@/lib/api/client";
 import { orderResponseSchema, paginatedOrderResponseSchema } from "@/schemas";
+import type {
+  CreateOrderRequest,
+  OrderResponse,
+  PaginatedOrderResponse,
+} from "@/lib/api/gen/types.gen";
 
 export async function getOrdersPage(page = 1, perPage = 20) {
-  return clientFetch(`/orders?page=${page}&per_page=${perPage}`, paginatedOrderResponseSchema);
+  return api.get<PaginatedOrderResponse>(
+    `/orders?page=${page}&per_page=${perPage}`,
+    paginatedOrderResponseSchema,
+  );
 }
 
-export async function createOrder(input: CreateOrderInput) {
-  return clientMutate<OrderResponse>("/orders", orderResponseSchema, "POST", input);
+export async function createOrder(input: CreateOrderRequest) {
+  return api.post<OrderResponse>("/orders", input, orderResponseSchema);
 }
 ```
+
+If the feature also needs Server Component access, add `frontend/src/lib/api/orders/server.ts` beside it, following `users/server.ts`.
 
 ### 2. Schema (`frontend/src/schemas/`)
 
@@ -222,24 +232,24 @@ pub struct CreateOrderRequest {
 }
 ```
 
-Then run `mise run openapi:gen`, and the frontend will automatically get the corresponding Zod schema:
+Then run `mise run openapi:gen`, and the frontend will automatically get the corresponding generated artifacts:
 
 ```ts
-// src/lib/api/schema.zod.ts (auto-generated)
-const CreateOrderRequest = z.object({
-  email: z.string().min(1).max(200).email(),
+// frontend/src/lib/api/gen/zod.gen.ts (auto-generated)
+export const zCreateOrderRequest = z.object({
+  email: z.email().min(1).max(200),
   display_name: z.string().min(1).max(100),
-}).passthrough();
+});
 ```
 
-Re-export in the frontend adapter (keep existing naming conventions):
+Only add code to `frontend/src/schemas/index.ts` when you need runtime transforms or derived schemas that the generator should not own:
 
 ```ts
 // frontend/src/schemas/index.ts
-import { schemas as generated } from "@/lib/api/schema.zod";
+import { zCreateOrderRequest } from "@/lib/api/gen/zod.gen";
 import { z } from "zod/v4";
 
-export const createOrderSchema = generated.CreateOrderRequest;
+export const createOrderSchema = zCreateOrderRequest;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 ```
 
@@ -248,7 +258,7 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 ```ts
 // frontend/src/hooks/useOrders.ts
 import useSWR from "swr";
-import { getOrdersPage } from "@/lib/api/orders";
+import { getOrdersPage } from "@/lib/api/orders/client";
 
 export function useOrders(page = 1, perPage = 20) {
   return useSWR(`/orders?page=${page}&per_page=${perPage}`, () => getOrdersPage(page, perPage));
@@ -288,7 +298,7 @@ mise run openapi:gen
 This runs two sub-tasks in sequence:
 
 1. **`mise run openapi:gen:be`** — generates `docs/openapi.json` from the Rust OpenAPI doc
-2. **`mise run openapi:gen:fe`** — converts `docs/openapi.json` into `frontend/src/lib/api/schema.d.ts`
+2. **`mise run openapi:gen:fe`** — converts `docs/openapi.json` into `frontend/src/lib/api/gen/types.gen.ts` and `frontend/src/lib/api/gen/zod.gen.ts`
 
 ### Manual steps
 
@@ -301,15 +311,17 @@ cargo run -p server -- gen-openapi > ../docs/openapi.json
 
 # 2. Generate TypeScript types + Zod schemas from OpenAPI JSON
 cd frontend
-pnpm openapi:gen:types   # produces src/lib/api/schema.d.ts
-pnpm openapi:gen:zod     # produces src/lib/api/schema.zod.ts
+pnpm openapi:gen
 ```
 
-The generation scripts are defined in `frontend/package.json`:
+The generation output is configured in `frontend/openapi-ts.config.ts`:
 
-```json
-"openapi:gen:types": "openapi-typescript ../docs/openapi.json -o src/lib/api/schema.d.ts",
-    "openapi:gen:zod": "openapi-zod-client ../docs/openapi.json -o src/lib/api/schema.zod.ts"
+```ts
+export default defineConfig({
+  input: "../docs/openapi.json",
+  output: "src/lib/api/gen",
+  plugins: ["@hey-api/typescript", "zod"],
+});
 ```
 
 > **Rule of thumb**: always run `mise run openapi:gen` after modifying any `#[derive(ToSchema)]` struct or `#[utoipa::path]` handler in the backend.

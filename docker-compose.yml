@@ -22,8 +22,7 @@ services:
       retries: 10
       start_period: 30s
     profiles:
-      - mssql
-      - full
+      - mssql-dex
 
   # ── PostgreSQL ──────────────────────────────────────────────────────────
   postgres:
@@ -41,8 +40,7 @@ services:
       interval: 5s
       retries: 5
     profiles:
-      - postgres
-      - full
+      - postgres-dex
 
   # ── Dex (local OIDC provider) ──────────────────────────────────────────
   dex:
@@ -53,8 +51,8 @@ services:
     volumes:
       - ./docker/dex/config.yaml:/etc/dex/config.yaml:ro
     profiles:
-      - oidc
-      - full
+      - mssql-dex
+      - postgres-dex
 
 volumes:
   pgdata:

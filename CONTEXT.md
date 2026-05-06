@@ -24,12 +24,16 @@ Keep setup commands and implementation checklists in `README.md`, `AGENTS.md`, o
 
 ## Shared Infrastructure
 
+- **Infra** — The shared infrastructure crate. Holds code used by multiple server binaries (`server`, `grpc-server`): telemetry initialization (`init_tracing`), health checkers (`DbHealthChecker`, `AlwaysHealthy`), and audit exporters (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`). Depends on `config` and `svc`.
+- **Combined server** — The `server` binary. Owns the main bootstrap flow for REST and may also co-host gRPC when `grpc.enabled: true`.
+- **Standalone gRPC server** — The `grpc-server` binary. Runs only the gRPC service and reuses `infra` for shared runtime concerns.
 - **AppState** — The application's shared state held by the HTTP/gRPC servers. Contains `UserService`, `OidcValidator`, `ProvisioningPolicy`, and `AuditService`.
 - **ProblemResponse** — The RFC 9457 Problem Details error response format used across all HTTP APIs.
 - **AuditEvent** — Security-relevant events emitted by `svc` and `server` layers. Lives in `svc::audit` so business logic can record audits without knowing HTTP.
-- **AuditExporter** — Strategy-pattern trait in `svc::audit`. Implementations (e.g. `StdoutExporter`) live in `server::audit` and may enrich events with HTTP context before export.
+- **AuditExporter** — Strategy-pattern trait in `svc::audit`. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit`. `infra::create_audit_exporter()` is the shared factory used by both REST and gRPC servers.
 - **AuditService** — Async channel-based audit dispatcher in `svc::audit`. Held in `AppState` and injectable into `UserService`.
-- **AuditEventProxy / AuditEventCtx** — Serializable structs in `server::audit` used by exporters to output structured JSON with optional HTTP context.
+- **AuditEventProxy / AuditEventCtx** — Serializable structs in `infra::audit` used by exporters to output structured JSON with optional HTTP context.
+- **AppError** — The HTTP error seam in `server::error`. Wraps `svc::Error` and is the only place where service failures are translated into status codes plus `ProblemResponse`.
 
 ## Transaction & Type Erasure
 
@@ -44,9 +48,25 @@ Keep setup commands and implementation checklists in `README.md`, `AGENTS.md`, o
 ## Config
 
 - **TlsConfig** — `server.tls` block: `enabled`, `cert_path`, `key_path`. Production defaults to enabled; local dev opts out via `local.yaml`.
-- **AuditConfig** — `audit.exporter` setting (`stdout` | `syslog` | `otel-logs`).
+- **AuditConfig** — `audit.exporter` setting (`none` | `syslog` | `otel-logs`). `none` maps to `NoopExporter`.
 
 ## Test Concepts
 
 - **MockUserRepo** — The canonical test double for `UserRepo`. Provided by the `repo` crate under the `test-helpers` feature. Maintains in-memory state (via `Arc<Mutex<...>>`) and optional call-spy vectors for orchestration tests.
 - **MockTransaction** — In-memory test double for `Transaction`. Supports staged `commit()` and `rollback()` with `committed`/`rolled_back` flags for verifying transaction boundaries in unit tests.
+
+## Relationships
+
+- The **Combined server** and **Standalone gRPC server** both depend on **Infra** for telemetry, health checks, and audit exporter construction.
+- **AppError** translates **svc::Error** into **ProblemResponse** for HTTP clients.
+- **AnyUserRepo** and **AnyTransaction** keep **AppState** and bootstrap code concrete while **UserService** still depends on the **UserRepo** seam.
+- **AuditService** dispatches **AuditEvent** values through an **AuditExporter** selected by **AuditConfig**.
+
+## Example dialogue
+
+> **Dev:** "When I say 'the server', do I mean the REST crate or the gRPC binary?"
+> **Domain expert:** "Use **Combined server** for the `server` binary that owns bootstrap and REST, and **Standalone gRPC server** for `grpc-server`. Both share **Infra**."
+
+## Flagged ambiguities
+
+- "server" was being used for both the `server` crate and the standalone `grpc-server` runtime — resolved: use **Combined server** for the main binary and **Standalone gRPC server** for the gRPC-only binary.

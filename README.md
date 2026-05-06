@@ -68,31 +68,31 @@ cp frontend/.env.example frontend/.env.local
 
 ```bash
 # MS SQL Server (default)
-docker compose --profile mssql up -d
+docker compose --profile mssql-dex up -d
 
 # Or PostgreSQL
-docker compose --profile postgres up -d
+docker compose --profile postgres-dex up -d
 ```
 
 ### 3. Run Backend & Frontend
 
 ```bash
-# Backend (http://localhost:3001, gRPC :50051)
+# Backend (`server` binary; REST on http://localhost:3001)
 mise run dev:be
 
 # Frontend
 mise run dev:fe
 ```
 
-### 4. (Optional) Enable Auth Locally
+`mise run dev:be` starts the combined `server` binary. REST is always served; gRPC is only exposed when `grpc.enabled: true` in `backend/config/local.yaml`.
+
+### 4. (Optional) Enable Auth
+
+Local dev defaults to `auth.enabled: false`. To enable:
 
 ```bash
-# Start Dex (pre-configured with test users: admin/manager/user)
-docker compose --profile full up -d
-
-# Enable auth in backend
-APP_AUTH__ENABLED=true mise run dev:be
-
+# Edit backend/config/local.yaml: set auth.enabled: true
+# Dex is already included in mssql-dex and postgres-dex profiles
 # Frontend .env.local is already pre-configured for Dex
 ```
 
@@ -117,6 +117,7 @@ mise run check
 | `mise run check:be` | Run backend format, lint, check, tests |
 | `mise run check:fe` | Run frontend format, lint, typecheck, build, tests |
 | `mise run openapi:gen` | Regenerate OpenAPI JSON, TypeScript types, and Zod schemas |
+| `cargo run --bin grpc-server` | Run the standalone gRPC server from `backend/` |
 
 ## Endpoints
 
@@ -128,7 +129,7 @@ mise run check
 | `http://localhost:3001/health` | Liveness |
 | `http://localhost:3001/health/ready` | Readiness (DB check) |
 | `http://localhost:3001/metrics` | Prometheus metrics |
-| `grpc://localhost:50051` | gRPC |
+| `grpc://localhost:50051` | gRPC (only when `grpc.enabled: true` or when running `grpc-server`) |
 
 ## Configuration
 
@@ -143,6 +144,8 @@ APP_OBSERVABILITY__OTLP__ENABLED=true
 `server.environment` (`local` | `development` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
+
+gRPC is disabled by default in both `backend/config/default.yaml` and `backend/config/local.yaml`. Enable it by setting `grpc.enabled: true` in `backend/config/local.yaml`, or run the standalone gRPC binary from `backend/` with `cargo run --bin grpc-server`.
 
 Frontend local environment lives in `frontend/.env.local`, copied from `frontend/.env.example`.
 

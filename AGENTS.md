@@ -41,7 +41,7 @@
 - **README stays operational**: a developer should be able to run the project from README without reading architecture rules.
 - **AGENTS stays prescriptive**: an agent should know exactly which patterns, checks, and docs to update without reading README except for local commands.
 - **CONTEXT stays semantic**: it should explain what terms mean, not how to run tools.
-- **Generated files stay generated**: never manually edit `docs/openapi.json`, `schema.d.ts`, or generated Zod output except to fix the generator.
+- **Generated files stay generated**: never manually edit `docs/openapi.json`, `frontend/src/lib/api/gen/types.gen.ts`, or `frontend/src/lib/api/gen/zod.gen.ts` except to fix the generator.
 
 ---
 
@@ -58,13 +58,14 @@ project-root/
 │   └── crates/
 │       ├── config/           # YAML+env config (figment). AppConfig struct.
 │       ├── dto/              # Shared DTOs. Request/Response, utoipa ToSchema.
+│       ├── infra/            # Shared infrastructure. Telemetry, health checkers, audit exporters.
 │       ├── model/            # Domain models (sqlx::FromRow).
 │       ├── migration/        # Database migrations via refinery. Per-DB SQL files.
 │       ├── repo/             # Repository pattern. UserRepo seam + Postgres/MSSQL adapters.
 │       │   └── src/user_repo/  # Trait, adapters, adapter-specific tests, test-helpers.
 │       ├── svc/              # Business logic. Depends on repo traits (not impls).
-│       ├── server/           # Axum REST (3001) + tonic gRPC (50051). Combined binary.
-│       └── grpc/             # Standalone gRPC server (optional).
+│       ├── server/           # Axum REST crate. `server` binary serves REST and can co-host gRPC.
+│       └── grpc/             # Shared gRPC crate + standalone `grpc-server` binary (50051, optional).
 ├── frontend/                 # pnpm workspace
 │   └── src/
 │       ├── app/              # Next.js App Router
@@ -97,7 +98,7 @@ project-root/
 - **Default DB**: MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.host` / `database.database`.
 - **Config philosophy**: `default.yaml` is production-safe (TLS on, auth on, DB encrypted). `local.yaml` (gitignored) is required for local development and explicitly opts out of these protections. `server.environment` (`local` | `development` | `staging` | `production`) is the single source of truth for environment classification. Security checks use this field, not URL heuristics. `AppConfig::validate()` panics on hardcoded passwords, missing TLS certs, and HTTP issuer URLs outside localhost. Secrets: `database.password_file` supports Docker/K8s secret mounts; weak password rejection outside local.
 - **Migrations**: refinery (supports both PostgreSQL and MSSQL). Embedded in server binary. `server migrate` subcommand runs migrations standalone. `database.run_migrations_on_startup` controls whether migrations run on serve (default `false` in prod config, `true` in local).
-- **Error handling**: SNAFU per-layer enums. `repo::Error` → `svc::Error` → `api::UsersError`.
+- **Error handling**: SNAFU per-layer enums. `repo::Error` → `svc::Error` → `server::error::AppError`. `AppError` implements `axum::response::IntoResponse`, mapping each `svc::Error` variant to the appropriate HTTP status code and RFC 9457 Problem Details JSON.
 - **API responses**: Success = raw JSON (no envelope), HTTP 2xx. Error = JSON with `type`/`title`/`status`/`detail` fields (RFC 9457 Problem Details subset), HTTP 4xx/5xx.
 - **Security headers**: Backend adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, and HSTS (when TLS on). Frontend Next.js config adds CSP and matching headers.
 - **Request limits**: `DefaultBodyLimit::max()` enforces `server.max_request_body_size` (default 1 MiB). `TimeoutLayer` handles request timeouts.
@@ -106,7 +107,7 @@ project-root/
 - **Authorization**: IdP-driven RBAC. The IdP is the authority for role assignment. On each request with a valid token, the middleware syncs the user's `role`, `display_name`, and `email_verified` from the current OIDC claims. Role is derived from claims via `ProvisioningPolicy::resolve_role()`, which maps well-known role names (admin/administrator/superuser → admin, manager/supervisor → manager) from the configured claim source (`roles` or `groups`). Hierarchical: Admin > Manager > User. Routes: list/get/update require Manager+; create/delete require Admin. When auth is disabled, all requests pass through.
 - **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented under `repo/src/user_repo/`. Adapter-specific testcontainers tests live in the same file as the adapter (`#[cfg(test)]`). A `test-helpers` feature provides `MockUserRepo` for upstream unit tests.
 - **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Production requires `grpc.tls.enabled: true` (mTLS when `ca_cert_path` is set). `grpc.auth_enabled` adds real JWT validation via sync JWKS cache with background refresh.
-- **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields. Exporters: `SyslogExporter` (UDP/TCP/TCP+TLS), `OtelLogsExporter` (OTLP HTTP JSON).
+- **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit` and are constructed via `infra::create_audit_exporter()` so both REST and gRPC binaries share the same factory logic. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields.
 - **Optimistic Locking**: `users` table has a `version` column. `UPDATE` increments `version` and checks `WHERE id = ? AND version = ?`, returning `409 CONFLICT` on stale data.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
 
@@ -115,7 +116,7 @@ project-root/
 - **Auth**: next-auth with generic OIDC. JWT session strategy. Auto-redirect to IdP.
 - **API calls**: Browser-side axios points at `/api/proxy`; the Next.js BFF proxy reads the encrypted next-auth JWT cookie server-side and attaches the Bearer token before forwarding to the backend. No access token is exposed to client JavaScript.
 - **Validation**: Zod schemas in `schemas/`. Single source for validation + types.
-- **API types**: Single authority — TypeScript types are derived from the backend OpenAPI spec. Run `pnpm openapi:gen` (frontend) after `cd backend && cargo run -p server -- gen-openapi > ../docs/openapi.json` to regenerate `schema.d.ts` when DTOs change.
+- **API types**: Single authority — TypeScript types are derived from the backend OpenAPI spec. Run `mise run openapi:gen` after DTO or `utoipa` route changes to regenerate `docs/openapi.json`, `frontend/src/lib/api/gen/types.gen.ts`, and `frontend/src/lib/api/gen/zod.gen.ts`.
 - **State**: Zustand (UI state), SWR (server cache).
 - **Routing**: Next.js App Router. `(auth)` = public route group (no URL impact), `dashboard/` = protected route segment.
 - **Styling**: Tailwind CSS v4 (CSS-first config).
