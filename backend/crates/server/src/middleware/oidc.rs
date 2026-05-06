@@ -52,20 +52,19 @@ pub struct AuthUser {
     pub user_id: uuid::Uuid,
     pub email: String,
     pub display_name: String,
-    pub role: String,
+    pub role: model::role::Role,
     pub sub: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct JwkKey {
-    kid: String,
-    n: String,
-    e: String,
-}
+/// Marker inserted by the OIDC middleware when authentication is disabled.
+/// Allows downstream authz middleware to distinguish "auth disabled" from
+/// "auth enabled but identity missing".
+#[derive(Debug, Clone)]
+pub struct AuthDisabledMarker;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwksResponse {
-    keys: Vec<JwkKey>,
+    pub keys: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -127,7 +126,7 @@ impl OidcHttpClient for ReqwestOidcClient {
 
 pub struct OidcValidator {
     config: AuthConfig,
-    jwks_cache: Mutex<(Vec<JwkKey>, Instant)>,
+    jwks_cache: Mutex<(Vec<serde_json::Value>, Instant)>,
     metadata_cache: Mutex<Option<(CoreProviderMetadata, Instant)>>,
     http_client: Arc<dyn OidcHttpClient>,
 }
@@ -201,7 +200,7 @@ impl OidcValidator {
 
     // --- internal helpers ---
 
-    async fn get_jwks(&self) -> Result<Vec<JwkKey>, AuthFailure> {
+    async fn get_jwks(&self) -> Result<Vec<serde_json::Value>, AuthFailure> {
         let cache_ttl = Duration::from_secs(self.config.jwks_cache_duration_secs);
         {
             let cache = self.jwks_cache.lock().await;
@@ -280,7 +279,11 @@ impl OidcValidator {
         }
     }
 
-    fn validate_token(&self, token: &str, jwks: &[JwkKey]) -> Result<Claims, AuthFailure> {
+    fn validate_token(
+        &self,
+        token: &str,
+        jwks: &[serde_json::Value],
+    ) -> Result<Claims, AuthFailure> {
         let header = decode_header(token).map_err(|e| {
             tracing::warn!("Failed to decode JWT header: {e}");
             AuthFailure::Unauthorized(format!("Failed to decode JWT header: {e}"))
@@ -291,20 +294,47 @@ impl OidcValidator {
             AuthFailure::Unauthorized("JWT missing kid claim".to_owned())
         })?;
 
-        let jwk = jwks.iter().find(|k| k.kid == kid).ok_or_else(|| {
-            tracing::warn!("JWK with kid={kid} not found in JWKS");
-            AuthFailure::Unauthorized(format!("JWK with kid={kid} not found in JWKS"))
+        let jwk_value = jwks
+            .iter()
+            .find(|k| {
+                k.get("kid")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|v| v == kid)
+            })
+            .ok_or_else(|| {
+                tracing::warn!("JWK with kid={kid} not found in JWKS");
+                AuthFailure::Unauthorized(format!("JWK with kid={kid} not found in JWKS"))
+            })?;
+
+        let jwk: jsonwebtoken::jwk::Jwk =
+            serde_json::from_value(jwk_value.clone()).map_err(|e| {
+                tracing::warn!("Failed to parse JWK: {e}");
+                AuthFailure::Internal(format!("Failed to parse JWK: {e}"))
+            })?;
+
+        let decoding_key = DecodingKey::from_jwk(&jwk).map_err(|e| {
+            tracing::warn!("Failed to construct decoding key from JWK: {e}");
+            AuthFailure::Internal(format!("Failed to construct decoding key from JWK: {e}"))
         })?;
 
-        let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|e| {
-            tracing::warn!("Failed to construct decoding key: {e}");
-            AuthFailure::Internal(format!("Failed to construct decoding key: {e}"))
-        })?;
+        let alg_str = format!("{:?}", header.alg);
+        if !self
+            .config
+            .allowed_algorithms
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case(&alg_str))
+        {
+            tracing::warn!("JWT algorithm {alg_str} not in allowed list");
+            return Err(AuthFailure::Unauthorized(format!(
+                "JWT algorithm {alg_str} is not allowed"
+            )));
+        }
 
         let mut validation = Validation::new(header.alg);
         validation.set_audience(&self.config.audience);
         validation.set_issuer(&[self.resolve_issuer()]);
         validation.set_required_spec_claims(&["exp", "iss", "sub"]);
+        validation.leeway = self.config.clock_skew_seconds;
 
         let token_data = decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
             tracing::warn!("JWT validation failed: {e}");
@@ -333,6 +363,17 @@ impl OidcValidator {
             tracing::warn!("JWT missing required email claim");
             AuthFailure::Unauthorized("JWT missing required email claim".to_owned())
         })?;
+
+        if self.config.require_email_verified {
+            let verified = claims.email_verified.unwrap_or(false);
+            if !verified {
+                tracing::warn!("JWT email is not verified");
+                return Err(AuthFailure::Unauthorized(
+                    "Email verification required".to_owned(),
+                ));
+            }
+        }
+
         Ok(OidcUserInfo {
             sub: claims.sub.clone(),
             issuer,
@@ -361,6 +402,7 @@ pub async fn oidc_middleware(
     next: Next,
 ) -> Result<Response, AuthFailure> {
     if !state.oidc.auth_enabled() {
+        req.extensions_mut().insert(AuthDisabledMarker);
         return Ok(next.run(req).await);
     }
 
@@ -390,7 +432,7 @@ pub async fn oidc_middleware(
     state.audit.record(AuditEvent::AuthSuccess {
         user_id: auth_user.user_id,
         email: auth_user.email.clone(),
-        role: auth_user.role.clone(),
+        role: auth_user.role.to_string(),
         sub: auth_user.sub.clone(),
     });
 
@@ -436,12 +478,13 @@ pJihLAeFBtyl9MCGyq8p9uhyAEDPDVGXe2gA/CyXTZfMb5glVdbuIvtBEJsxER+g
 Ayt5d8YaALp3owVyEfJ3Uok=
 -----END PRIVATE KEY-----";
 
-    fn test_jwks() -> Vec<JwkKey> {
-        vec![JwkKey {
-            kid: "test-key-1".to_owned(),
-            n: "wv9Vv_a_hj5Iuyc0WZP788mpYyfQEFt-V5eh4mYa8fp462xTuvWM_ws8UTv2UwFXrSvx8v6qpqU3mX2gVSE9U9sUrgBsuGMH3j7p3xchnuTZ3u_2QLX6nfSYJmgKTShMnnzAh8DU5f-q1cl4gS5qPY6RARzi3gKYGILbTDz8W5qVg8-7WVebh1M0N7-9nR6sHnZpOXLXn_KekrhpRXwjQLk0YdzBaytsAAJuxIGoNsg2R4MOelmU0TiiRpUt4Zzrmjf1roRxgHJZFNsK1zc1TXJvpWOhreJBn6p5QP2uUHGH0_ieMrNtzSP7ylfKNNhvtSyze4FSH6bTlZRWngez5w".to_owned(),
-            e: "AQAB".to_owned(),
-        }]
+    fn test_jwks() -> Vec<serde_json::Value> {
+        vec![serde_json::json!({
+            "kty": "RSA",
+            "kid": "test-key-1",
+            "n": "wv9Vv_a_hj5Iuyc0WZP788mpYyfQEFt-V5eh4mYa8fp462xTuvWM_ws8UTv2UwFXrSvx8v6qpqU3mX2gVSE9U9sUrgBsuGMH3j7p3xchnuTZ3u_2QLX6nfSYJmgKTShMnnzAh8DU5f-q1cl4gS5qPY6RARzi3gKYGILbTDz8W5qVg8-7WVebh1M0N7-9nR6sHnZpOXLXn_KekrhpRXwjQLk0YdzBaytsAAJuxIGoNsg2R4MOelmU0TiiRpUt4Zzrmjf1roRxgHJZFNsK1zc1TXJvpWOhreJBn6p5QP2uUHGH0_ieMrNtzSP7ylfKNNhvtSyze4FSH6bTlZRWngez5w",
+            "e": "AQAB"
+        })]
     }
 
     fn encode_token(claims: &Claims) -> String {
@@ -468,6 +511,7 @@ Ayt5d8YaALp3owVyEfJ3Uok=
             issuer_url: "https://test-issuer.example.com".to_owned(),
             audience: vec!["test-audience".to_owned()],
             allowed_email_domains: vec![],
+            allow_all_domains: false,
             role_claim_source: RoleClaimSource::Roles,
             discovery_mode: DiscoveryMode::Manual,
             manual_endpoints: Some(config::ManualOidcEndpoints {
@@ -478,6 +522,16 @@ Ayt5d8YaALp3owVyEfJ3Uok=
             }),
             jwks_cache_duration_secs: 3600,
             danger_accept_invalid_certs: false,
+            allowed_algorithms: vec![
+                "RS256".to_owned(),
+                "RS384".to_owned(),
+                "RS512".to_owned(),
+                "ES256".to_owned(),
+                "ES384".to_owned(),
+                "ES512".to_owned(),
+            ],
+            require_email_verified: false,
+            clock_skew_seconds: 60,
         }
     }
 
@@ -537,7 +591,9 @@ Ayt5d8YaALp3owVyEfJ3Uok=
     async fn validate_token_should_fail_with_invalid_kid() {
         let config = test_config();
         let mut jwks = test_jwks();
-        jwks[0].kid = "wrong-kid".to_owned();
+        if let Some(obj) = jwks[0].as_object_mut() {
+            obj.insert("kid".to_owned(), serde_json::json!("wrong-kid"));
+        }
         let client = Arc::new(MockOidcClient {
             jwks: JwksResponse { keys: jwks.clone() },
         });
@@ -667,6 +723,6 @@ Ayt5d8YaALp3owVyEfJ3Uok=
         );
         let auth_user = result.unwrap();
         assert_eq!(auth_user.email, "test@example.com");
-        assert_eq!(auth_user.role, "user");
+        assert_eq!(auth_user.role, model::role::Role::User);
     }
 }

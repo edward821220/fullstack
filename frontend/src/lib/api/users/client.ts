@@ -1,6 +1,5 @@
 import * as api from "@/lib/api/client";
-import { paginatedUserResponseSchema } from "@/schemas";
-import { zUserResponse } from "@/lib/api/gen/zod.gen";
+import { paginatedUserResponseSchema, userResponseSchema } from "@/schemas";
 import type {
   PaginatedUserResponse,
   UserResponse,
@@ -18,17 +17,17 @@ export async function getUsersPage(page = 1, perPage = 20) {
 
 /** Client-side: fetch single user by ID. */
 export async function getUser(id: string) {
-  return api.get<UserResponse>(`/users/${id}`, zUserResponse);
+  return api.get<UserResponse>(`/users/${id}`, userResponseSchema);
 }
 
 /** Client-side: create user. */
 export async function createUser(input: CreateUserRequest) {
-  return api.post<UserResponse>("/users", input, zUserResponse);
+  return api.post<UserResponse>("/users", input, userResponseSchema);
 }
 
 /** Client-side: update user. */
 export async function updateUser(id: string, input: UpdateUserRequest) {
-  return api.put<UserResponse>(`/users/${id}`, input, zUserResponse);
+  return api.put<UserResponse>(`/users/${id}`, input, userResponseSchema);
 }
 
 /** Client-side: delete user. */

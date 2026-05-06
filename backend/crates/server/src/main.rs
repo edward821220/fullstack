@@ -18,6 +18,8 @@ struct Cli {
 enum Command {
     /// Print the OpenAPI specification as JSON to stdout
     GenOpenapi,
+    /// Run database migrations and exit
+    Migrate,
     /// Start the server (default)
     Serve,
 }
@@ -34,6 +36,34 @@ async fn main() {
                 std::process::exit(1);
             });
             println!("{json}");
+            return;
+        }
+        Some(Command::Migrate) => {
+            let config = match AppConfig::load() {
+                Ok(c) => {
+                    if let Err(e) = c.validate() {
+                        eprintln!("Config validation failed: {e}");
+                        std::process::exit(1);
+                    }
+                    c
+                }
+                Err(e) => {
+                    eprintln!("Failed to load configuration: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let telemetry = init_tracing(&config).unwrap_or_else(|e| {
+                eprintln!("Failed to initialize observability: {e}");
+                std::process::exit(1);
+            });
+            tracing::info!("Running migrations...");
+            if let Err(e) = migration::run(&config.database).await {
+                tracing::error!("Migration failed: {e}");
+                telemetry.shutdown();
+                std::process::exit(1);
+            }
+            tracing::info!("Migrations completed successfully.");
+            telemetry.shutdown();
             return;
         }
         Some(Command::Serve) | None => {}
@@ -60,13 +90,17 @@ async fn main() {
 
     tracing::info!("Starting server...");
 
-    if let Err(e) = migration::run(&config.database).await {
-        tracing::error!("Migration failed: {e}");
-        std::process::exit(1);
+    if config.database.run_migrations_on_startup {
+        if let Err(e) = migration::run(&config.database).await {
+            tracing::error!("Migration failed: {e}");
+            std::process::exit(1);
+        }
+    } else {
+        tracing::info!("Skipping migrations on startup (run_migrations_on_startup=false)");
     }
 
-    let rest_repo = server::bootstrap::connect_to_database(&config).await;
-    let grpc_repo = server::bootstrap::connect_to_database(&config).await;
+    let (rest_repo, rest_health) = server::bootstrap::connect_to_database(&config).await;
+    let (grpc_repo, grpc_health) = server::bootstrap::connect_to_database(&config).await;
 
     let rest_addr = config.rest_addr().unwrap_or_else(|e| {
         tracing::error!("Invalid REST address: {e}");
@@ -82,7 +116,9 @@ async fn main() {
     let config_clone = config.clone();
     let rest_handle = tokio::spawn(async move {
         tracing::info!("REST server listening on {}", rest_addr);
-        if let Err(e) = server::rest_server::serve_rest(config_clone, rest_repo, rest_addr).await {
+        if let Err(e) =
+            server::rest_server::serve_rest(config_clone, rest_repo, rest_health, rest_addr).await
+        {
             tracing::error!("REST server error: {e}");
         }
     });
@@ -95,7 +131,7 @@ async fn main() {
         let config_clone2 = config.clone();
         Some(tokio::spawn(async move {
             tracing::info!("gRPC server listening on {}", grpc_addr);
-            if let Err(e) = grpc::serve(config_clone2, grpc_repo, grpc_addr).await {
+            if let Err(e) = grpc::serve(config_clone2, grpc_repo, grpc_health, grpc_addr).await {
                 tracing::error!("gRPC server error: {e}");
             }
         }))

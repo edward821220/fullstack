@@ -26,7 +26,7 @@ pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User>;
     async fn update_user(&self, id: Uuid, display_name: Option<&str>) -> Result<User>;
@@ -38,13 +38,11 @@ pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
         policy: &ProvisioningPolicy,
     ) -> Result<User>;
 
-    async fn health_check(&self) -> Result<()>;
-
     async fn sync_oidc_attributes(
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User>;
 }
@@ -64,12 +62,12 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         self.repo.list(page, per_page).await.map_err(Into::into)
     }
 
-    #[instrument(skip(self), fields(email = %email))]
+    #[instrument(skip(self))]
     async fn create_user(
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         if email.is_empty() {
@@ -93,7 +91,7 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         Ok(self.repo.delete(id).await?)
     }
 
-    #[instrument(skip(self, oidc_info, policy), fields(email = %oidc_info.email, sub = %oidc_info.sub, issuer = %oidc_info.issuer))]
+    #[instrument(skip(self, oidc_info, policy), fields(issuer = %oidc_info.issuer))]
     async fn provision_user(
         &self,
         oidc_info: &OidcUserInfo,
@@ -112,7 +110,7 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             let role = policy.resolve_role(&oidc_info.roles);
             return self
                 .repo
-                .sync_oidc_attributes(user.id, &oidc_info.name, &role, oidc_info.email_verified)
+                .sync_oidc_attributes(user.id, &oidc_info.name, role, oidc_info.email_verified)
                 .await
                 .map_err(Into::into);
         }
@@ -132,8 +130,6 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         let user = match existing_user {
             Some(u) => {
                 tracing::info!(
-                    email = %oidc_info.email,
-                    sub = %oidc_info.sub,
                     issuer = %oidc_info.issuer,
                     user_id = %u.id,
                     "Linking existing user to OIDC identity and syncing attributes"
@@ -143,15 +139,13 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
                         &mut tx,
                         u.id,
                         &oidc_info.name,
-                        &role,
+                        role,
                         oidc_info.email_verified,
                     )
                     .await?
             }
             None => {
                 tracing::info!(
-                    email = %oidc_info.email,
-                    sub = %oidc_info.sub,
                     issuer = %oidc_info.issuer,
                     "Creating new user via JIT provisioning"
                 );
@@ -160,7 +154,7 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
                         &mut tx,
                         &oidc_info.email,
                         &oidc_info.name,
-                        &role,
+                        role,
                         oidc_info.email_verified,
                     )
                     .await?
@@ -181,15 +175,11 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
         Ok(user)
     }
 
-    async fn health_check(&self) -> Result<()> {
-        self.repo.health_check().await.map_err(Into::into)
-    }
-
     async fn sync_oidc_attributes(
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         self.repo
@@ -205,7 +195,9 @@ mod tests {
     use model::user_identity::UserIdentity;
     use time::OffsetDateTime;
 
-    fn resolve_role_with_policy(roles: &[&str]) -> String {
+    use model::role::Role;
+
+    fn resolve_role_with_policy(roles: &[&str]) -> Role {
         let policy = ProvisioningPolicy::new(vec![], "user".to_owned());
         let strings: Vec<String> = roles.iter().map(|s| s.to_string()).collect();
         policy.resolve_role(&strings)
@@ -215,7 +207,7 @@ mod tests {
         id: Uuid,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> User {
         let now = OffsetDateTime::now_utc();
@@ -223,7 +215,7 @@ mod tests {
             id,
             email: email.to_owned(),
             display_name: display_name.to_owned(),
-            role: role.to_owned(),
+            role,
             email_verified,
             created_at: now,
             updated_at: now,
@@ -254,7 +246,7 @@ mod tests {
             existing_id,
             "user@example.com",
             "Old Name",
-            "user",
+            Role::User,
             false,
         ));
 
@@ -265,7 +257,7 @@ mod tests {
         let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
 
         assert_eq!(user.display_name, "New Name");
-        assert_eq!(user.role, "admin");
+        assert_eq!(user.role, Role::Admin);
         assert!(user.email_verified);
 
         let identities = svc
@@ -286,7 +278,7 @@ mod tests {
         let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
 
         assert_eq!(user.display_name, "New Name");
-        assert_eq!(user.role, "admin");
+        assert_eq!(user.role, Role::Admin);
 
         let users = svc.repo.list(1, 10).await.unwrap();
         assert_eq!(users.0.len(), 1);
@@ -307,7 +299,7 @@ mod tests {
             existing_id,
             "user@example.com",
             "Old Name",
-            "user",
+            Role::User,
             false,
         ));
         repo.identities.lock().unwrap().push(UserIdentity {
@@ -326,7 +318,7 @@ mod tests {
         let user = svc.provision_user(&oidc_info, &policy).await.unwrap();
 
         assert_eq!(user.display_name, "New Name");
-        assert_eq!(user.role, "admin");
+        assert_eq!(user.role, Role::Admin);
 
         let identities = svc
             .repo
@@ -353,41 +345,44 @@ mod tests {
 
     #[test]
     fn resolve_role_should_return_admin_for_exact_match() {
-        assert_eq!(resolve_role_with_policy(&["admin"]), "admin");
-        assert_eq!(resolve_role_with_policy(&["administrator"]), "admin");
-        assert_eq!(resolve_role_with_policy(&["superuser"]), "admin");
+        assert_eq!(resolve_role_with_policy(&["admin"]), Role::Admin);
+        assert_eq!(resolve_role_with_policy(&["administrator"]), Role::Admin);
+        assert_eq!(resolve_role_with_policy(&["superuser"]), Role::Admin);
     }
 
     #[test]
     fn resolve_role_should_return_manager_for_exact_match() {
-        assert_eq!(resolve_role_with_policy(&["manager"]), "manager");
-        assert_eq!(resolve_role_with_policy(&["supervisor"]), "manager");
+        assert_eq!(resolve_role_with_policy(&["manager"]), Role::Manager);
+        assert_eq!(resolve_role_with_policy(&["supervisor"]), Role::Manager);
     }
 
     #[test]
     fn resolve_role_should_return_user_for_unknown_role() {
-        assert_eq!(resolve_role_with_policy(&["viewer"]), "user");
+        assert_eq!(resolve_role_with_policy(&["viewer"]), Role::User);
     }
 
     #[test]
     fn resolve_role_should_return_user_for_empty_roles() {
-        assert_eq!(resolve_role_with_policy(&[]), "user");
+        assert_eq!(resolve_role_with_policy(&[]), Role::User);
     }
 
     #[test]
     fn resolve_role_should_be_case_insensitive() {
-        assert_eq!(resolve_role_with_policy(&["Admin"]), "admin");
+        assert_eq!(resolve_role_with_policy(&["Admin"]), Role::Admin);
     }
 
     #[test]
     fn resolve_role_should_not_match_substrings() {
-        assert_eq!(resolve_role_with_policy(&["superadministrator"]), "user");
-        assert_eq!(resolve_role_with_policy(&["micro_manager"]), "user");
+        assert_eq!(
+            resolve_role_with_policy(&["superadministrator"]),
+            Role::User
+        );
+        assert_eq!(resolve_role_with_policy(&["micro_manager"]), Role::User);
     }
 
     #[test]
     fn resolve_role_first_match_wins() {
-        assert_eq!(resolve_role_with_policy(&["admin", "manager"]), "admin");
+        assert_eq!(resolve_role_with_policy(&["admin", "manager"]), Role::Admin);
     }
 
     #[test]

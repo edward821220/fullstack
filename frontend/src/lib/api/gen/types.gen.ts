@@ -18,7 +18,6 @@ export type ErrorResponse = {
 
 export type HealthResponse = {
   status: string;
-  version: string;
 };
 
 export type PaginatedUserResponse = {
@@ -27,6 +26,13 @@ export type PaginatedUserResponse = {
   per_page: number;
   total: number;
 };
+
+/**
+ * Hierarchical role used across the domain layer.
+ *
+ * Ordering: Admin > Manager > User.
+ */
+export type Role = "admin" | "manager" | "user";
 
 export type UpdateUserRequest = {
   display_name?: string | null;
@@ -38,8 +44,9 @@ export type UserResponse = {
   email: string;
   email_verified: boolean;
   id: string;
-  role: string;
+  role: Role;
   updated_at: string;
+  version: number;
 };
 
 export type ListUsersData = {
@@ -276,7 +283,7 @@ export type HealthReadyData = {
 
 export type HealthReadyErrors = {
   /**
-   * Database health check failed
+   * Service is not ready
    */
   503: ErrorResponse;
 };

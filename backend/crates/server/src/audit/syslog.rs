@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use svc::audit::{AuditError, AuditEvent, AuditExporter};
 
 /// Syslog exporter (RFC 5424).
-/// Supports UDP (default) and TCP.
+/// Supports UDP (default), TCP, and TCP+TLS.
 pub struct SyslogExporter {
     host: String,
     port: u16,
@@ -9,6 +11,7 @@ pub struct SyslogExporter {
     facility: u8,
     app_name: String,
     hostname: String,
+    tls_connector: Option<tokio_rustls::TlsConnector>,
 }
 
 impl SyslogExporter {
@@ -19,6 +22,7 @@ impl SyslogExporter {
         facility_name: &str,
         app_name: String,
         hostname: String,
+        tls_enabled: bool,
     ) -> Self {
         let facility = match facility_name.to_lowercase().as_str() {
             "kern" => 0,
@@ -43,6 +47,21 @@ impl SyslogExporter {
             "local7" => 23,
             _ => 16, // default local0
         };
+
+        let tls_connector = if tls_enabled {
+            let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+            let cert_result = rustls_native_certs::load_native_certs();
+            for cert in cert_result.certs {
+                roots.add(cert).ok();
+            }
+            let config = tokio_rustls::rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            Some(tokio_rustls::TlsConnector::from(Arc::new(config)))
+        } else {
+            None
+        };
+
         Self {
             host,
             port,
@@ -50,6 +69,7 @@ impl SyslogExporter {
             facility,
             app_name,
             hostname,
+            tls_connector,
         }
     }
 
@@ -81,24 +101,49 @@ impl AuditExporter for SyslogExporter {
         let msg = self.to_rfc5424(&event);
         let addr = format!("{}:{}", self.host, self.port);
 
-        if self.protocol == "tcp" {
-            match tokio::net::TcpStream::connect(&addr).await {
-                Ok(mut stream) => {
-                    use tokio::io::AsyncWriteExt;
-                    if let Err(e) = stream.write_all(msg.as_bytes()).await {
-                        return Err(AuditError::Export {
-                            message: format!("Syslog TCP write failed: {e}"),
-                        });
-                    }
-                    if let Err(e) = stream.write_all(b"\n").await {
-                        return Err(AuditError::Export {
-                            message: format!("Syslog TCP write failed: {e}"),
-                        });
-                    }
-                }
-                Err(e) => {
-                    return Err(AuditError::Export {
+        if self.protocol == "tcp" || self.tls_connector.is_some() {
+            let stream =
+                tokio::net::TcpStream::connect(&addr)
+                    .await
+                    .map_err(|e| AuditError::Export {
                         message: format!("Syslog TCP connect failed: {e}"),
+                    })?;
+
+            if let Some(connector) = &self.tls_connector {
+                let server_name = self
+                    .host
+                    .clone()
+                    .try_into()
+                    .map_err(|e| AuditError::Export {
+                        message: format!("Invalid syslog TLS server name: {e}"),
+                    })?;
+                let mut tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
+                    AuditError::Export {
+                        message: format!("Syslog TLS handshake failed: {e}"),
+                    }
+                })?;
+                use tokio::io::AsyncWriteExt;
+                if let Err(e) = tls_stream.write_all(msg.as_bytes()).await {
+                    return Err(AuditError::Export {
+                        message: format!("Syslog TLS write failed: {e}"),
+                    });
+                }
+                if let Err(e) = tls_stream.write_all(b"\n").await {
+                    return Err(AuditError::Export {
+                        message: format!("Syslog TLS write failed: {e}"),
+                    });
+                }
+            } else {
+                let mut stream = stream;
+                use tokio::io::AsyncWriteExt;
+                if let Err(e) = stream.write_all(msg.as_bytes()).await {
+                    return Err(AuditError::Export {
+                        message: format!("Syslog TCP write failed: {e}"),
+                    });
+                }
+                if let Err(e) = stream.write_all(b"\n").await {
+                    return Err(AuditError::Export {
+                        message: format!("Syslog TCP write failed: {e}"),
                     });
                 }
             }
@@ -150,6 +195,7 @@ mod tests {
             "local0",
             "test-app".to_owned(),
             "test-host".to_owned(),
+            false,
         );
 
         let event = sample_event();
@@ -194,6 +240,7 @@ mod tests {
             "local0",
             "test-app".to_owned(),
             "test-host".to_owned(),
+            false,
         );
 
         exporter.export(sample_event()).await.unwrap();
@@ -228,6 +275,7 @@ mod tests {
             "auth",
             "app".to_owned(),
             "host".to_owned(),
+            false,
         );
 
         let export_handle = tokio::spawn(async move {
@@ -258,6 +306,7 @@ mod tests {
             "local0",
             "app".to_owned(),
             "host".to_owned(),
+            false,
         );
 
         let event = AuditEvent::AuthFailure {

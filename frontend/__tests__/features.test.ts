@@ -41,6 +41,7 @@ const mockUser = {
   email_verified: true,
   created_at: "2024-01-01T00:00:00Z",
   updated_at: "2024-01-01T00:00:00Z",
+  version: 1,
 };
 
 const mockPaginated = {
@@ -131,7 +132,7 @@ describe("users server API module", () => {
       text: vi.fn().mockResolvedValue("Not found"),
     } as unknown as Response);
 
-    await expect(getUsersPageServer(1, 8)).rejects.toThrow(
+    await expect(getUsersPageServer(1, 8, "dummy-token")).rejects.toThrow(
       "Server GET /users?page=1&per_page=8 failed (404): Not found",
     );
   });
@@ -250,6 +251,7 @@ describe("API types — generated from OpenAPI spec", () => {
       email_verified: true,
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-01T00:00:00Z",
+      version: 1,
     };
     expect(user.id).toBeDefined();
     expect(user.email).toBe("admin@example.com");
@@ -352,14 +354,14 @@ describe("Zod schemas", () => {
 import type { Session } from "next-auth";
 
 describe("Auth session types", () => {
-  it("Session should support accessToken and error fields", () => {
+  it("Session should not expose accessToken to the client", () => {
     const session: Session = {
       user: { name: "Test", email: "test@example.com", role: "admin" },
       expires: new Date().toISOString(),
-      accessToken: "abc.def.ghi",
       error: "RefreshAccessTokenError",
     };
-    expect(session.accessToken).toBe("abc.def.ghi");
+    // @ts-expect-error accessToken is intentionally removed from session payload
+    expect(session.accessToken).toBeUndefined();
     expect(session.error).toBe("RefreshAccessTokenError");
   });
 
@@ -367,9 +369,9 @@ describe("Auth session types", () => {
     const session: Session = {
       user: { name: "Test", email: "test@example.com", role: "user" },
       expires: new Date().toISOString(),
-      accessToken: "abc.def.ghi",
     };
-    expect(session.accessToken).toBeDefined();
+    // @ts-expect-error accessToken is intentionally removed from session payload
+    expect(session.accessToken).toBeUndefined();
     expect(session.error).toBeUndefined();
   });
 

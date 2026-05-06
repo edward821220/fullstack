@@ -38,6 +38,10 @@ run = [
   "pnpm test",
 ]
 
+[tasks.check]
+description = "Run full backend and frontend verification"
+run = ["mise run check:be", "mise run check:fe"]
+
 [tasks."openapi:gen:be"]
 description = "Generate OpenAPI JSON spec from backend"
 dir = "backend"

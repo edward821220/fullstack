@@ -5,6 +5,7 @@ pub mod postgres;
 pub mod test_helpers;
 
 use async_trait::async_trait;
+use model::role::Role;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use uuid::Uuid;
@@ -40,7 +41,7 @@ pub trait UserRepo: Send + Sync + Clone {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User>;
     async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User>;
@@ -71,11 +72,9 @@ pub trait UserRepo: Send + Sync + Clone {
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User>;
-
-    async fn health_check(&self) -> Result<()>;
 
     /// Find a user by email **inside a transaction**, acquiring a row lock.
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>>;
@@ -86,7 +85,7 @@ pub trait UserRepo: Send + Sync + Clone {
         tx: &mut Self::Tx,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User>;
 
@@ -96,7 +95,7 @@ pub trait UserRepo: Send + Sync + Clone {
         tx: &mut Self::Tx,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User>;
 
@@ -189,7 +188,7 @@ impl UserRepo for AnyUserRepo {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         match self {
@@ -289,7 +288,7 @@ impl UserRepo for AnyUserRepo {
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         match self {
@@ -306,15 +305,6 @@ impl UserRepo for AnyUserRepo {
                 repo.sync_oidc_attributes(id, display_name, role, email_verified)
                     .await
             }
-        }
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        match self {
-            AnyUserRepo::Postgres(repo) => repo.health_check().await,
-            AnyUserRepo::Mssql(repo) => repo.health_check().await,
-            #[cfg(feature = "test-helpers")]
-            AnyUserRepo::Mock(repo) => repo.health_check().await,
         }
     }
 
@@ -343,7 +333,7 @@ impl UserRepo for AnyUserRepo {
         tx: &mut Self::Tx,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         match (self, tx) {
@@ -371,7 +361,7 @@ impl UserRepo for AnyUserRepo {
         tx: &mut Self::Tx,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         match (self, tx) {

@@ -1,15 +1,21 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use config::AppConfig;
 
-pub async fn connect_to_database(config: &AppConfig) -> repo::AnyUserRepo {
+use crate::health_checker::DbHealthChecker;
+
+pub async fn connect_to_database(
+    config: &AppConfig,
+) -> (repo::AnyUserRepo, Arc<dyn svc::HealthChecker>) {
     let mut attempt = 0;
     loop {
         attempt += 1;
         match repo::connect(&config.database).await {
-            Ok(repo) => {
+            Ok((repo, probe)) => {
                 tracing::info!("Connected to database after {} attempt(s)", attempt);
-                return repo;
+                let health = Arc::new(DbHealthChecker::new(probe));
+                return (repo, health);
             }
             Err(e) => {
                 if attempt >= config.database.connect_retry_attempts {

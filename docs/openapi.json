@@ -439,7 +439,7 @@
             }
           },
           "503": {
-            "description": "Database health check failed",
+            "description": "Service is not ready",
             "content": {
               "application/json": {
                 "schema": {
@@ -472,7 +472,8 @@
             "maxLength": 100,
             "minLength": 1
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ErrorResponse": {
         "type": "object",
@@ -502,14 +503,10 @@
       "HealthResponse": {
         "type": "object",
         "required": [
-          "status",
-          "version"
+          "status"
         ],
         "properties": {
           "status": {
-            "type": "string"
-          },
-          "version": {
             "type": "string"
           }
         }
@@ -546,6 +543,15 @@
           }
         }
       },
+      "Role": {
+        "type": "string",
+        "description": "Hierarchical role used across the domain layer.\n\nOrdering: Admin > Manager > User.",
+        "enum": [
+          "admin",
+          "manager",
+          "user"
+        ]
+      },
       "UpdateUserRequest": {
         "type": "object",
         "properties": {
@@ -557,7 +563,8 @@
             "maxLength": 100,
             "minLength": 1
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UserResponse": {
         "type": "object",
@@ -568,7 +575,8 @@
           "role",
           "email_verified",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "version"
         ],
         "properties": {
           "created_at": {
@@ -588,10 +596,14 @@
             "format": "uuid"
           },
           "role": {
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           },
           "updated_at": {
             "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }

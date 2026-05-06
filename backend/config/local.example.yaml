@@ -18,6 +18,7 @@ server:
     enabled: false
   cors_origins:
     - "http://localhost:3000"
+  docs_enabled: true
 
 database:
   host: "localhost"
@@ -26,16 +27,35 @@ database:
   username: "sa"
   password: "YourStrong!Passw0rd"
   encrypt: false
+  trust_cert: true
+  run_migrations_on_startup: true
 
 auth:
   enabled: false
   issuer_url: "http://localhost:8080/dex"
   audience:
     - "fullstack-template"
+  require_email_verified: false
+  # Local development: keep allow_all_domains false or true as needed.
+  allow_all_domains: false
 
 observability:
   log_format: "pretty"
   service_name: "fullstack-template"
 
+grpc:
+  enabled: false
+  auth_enabled: false
+  tls:
+    enabled: false
+
+rate_limit:
+  # Disabled for local development to avoid throttling during rapid iteration.
+  # Production default.yaml enables this with conservative limits.
+  enabled: false
+  requests_per_second: 100
+  burst_size: 200
+
 audit:
   exporter: "none"
+  pii_mode: "full"

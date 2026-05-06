@@ -16,10 +16,12 @@ server:
   timeout_seconds: 30
   shutdown_timeout_seconds: 30
   tls:
-    enabled: false
+    enabled: true
     cert_path: ""
     key_path: ""
   cors_origins: []
+  docs_enabled: false
+  max_request_body_size: 1048576
 
 database:
   driver: mssql
@@ -28,10 +30,12 @@ database:
   database: ""
   username: ""
   password: ""
+  password_file: null
   max_connections: 20
   connect_retry_attempts: 5
   connect_retry_delay_ms: 2000
   encrypt: true
+  run_migrations_on_startup: false
 
 auth:
   enabled: true
@@ -39,16 +43,26 @@ auth:
   audience: []
   jwks_cache_duration_secs: 3600
   allowed_email_domains: []
+  allow_all_domains: false
   role_claim_source: "groups"
   discovery_mode: "discovery"
   manual_endpoints: null
   danger_accept_invalid_certs: false
+  allowed_algorithms:
+    - RS256
+    - RS384
+    - RS512
+    - ES256
+    - ES384
+    - ES512
+  require_email_verified: true
+  clock_skew_seconds: 60
 
 observability:
   log_format: "json"
   log_level: "info"
   service_name: ""
-  metrics_enabled: true
+  metrics_enabled: false
   otlp:
     enabled: false
     endpoint: ""
@@ -59,11 +73,26 @@ grpc:
   enabled: false
   host: "0.0.0.0"
   port: 50051
+  auth_enabled: false
+  tls:
+    enabled: false
+    cert_path: ""
+    key_path: ""
+    ca_cert_path: null
+
+rate_limit:
+  # Production baseline: enabled with conservative defaults.
+  # Local development should override to false in local.yaml.
+  enabled: true
+  requests_per_second: 10
+  burst_size: 20
 
 audit:
   exporter: "syslog"
+  pii_mode: "redact"
   syslog:
     host: ""
     port: 514
     protocol: "udp"
     facility: "local0"
+    tls_enabled: false

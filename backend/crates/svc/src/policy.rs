@@ -11,7 +11,7 @@ pub struct OidcUserInfo {
 /// Policy that governs how an external OIDC user is mapped to a local `User`.
 pub struct ProvisioningPolicy {
     pub allowed_email_domains: Vec<String>,
-    pub default_role: String,
+    default_role: String,
 }
 
 impl ProvisioningPolicy {
@@ -39,21 +39,21 @@ impl ProvisioningPolicy {
         Ok(())
     }
 
-    pub fn resolve_role(&self, oidc_roles: &[String]) -> String {
+    pub fn resolve_role(&self, oidc_roles: &[String]) -> model::role::Role {
         let admin_set = ["admin", "administrator", "superuser"];
         let manager_set = ["manager", "supervisor"];
 
         for role in oidc_roles {
             let lower = role.to_lowercase();
             if admin_set.iter().any(|&i| i == lower) {
-                return "admin".to_owned();
+                return model::role::Role::Admin;
             }
             if manager_set.iter().any(|&i| i == lower) {
-                return "manager".to_owned();
+                return model::role::Role::Manager;
             }
         }
 
-        self.default_role.clone()
+        self.default_role.parse().unwrap_or(model::role::Role::User)
     }
 }
 

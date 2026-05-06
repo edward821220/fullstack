@@ -34,6 +34,7 @@ export type {
   ListUsersResponse,
   ListUsersResponses,
   PaginatedUserResponse,
+  Role,
   UpdateUserData,
   UpdateUserError,
   UpdateUserErrors,

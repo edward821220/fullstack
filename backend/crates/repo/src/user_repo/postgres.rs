@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use model::role::Role;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use sqlx::Row;
@@ -105,7 +106,7 @@ impl UserRepo for PostgresUserRepo {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         if self.find_by_email(email).await?.is_some() {
@@ -124,7 +125,7 @@ impl UserRepo for PostgresUserRepo {
         .bind(id)
         .bind(email)
         .bind(display_name)
-        .bind(role)
+        .bind(role.as_str())
         .bind(email_verified)
         .bind(now)
         .bind(now)
@@ -292,7 +293,7 @@ impl UserRepo for PostgresUserRepo {
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -301,7 +302,7 @@ impl UserRepo for PostgresUserRepo {
             "UPDATE users SET display_name = $1, role = $2, email_verified = $3, updated_at = $4, version = version + 1 WHERE id = $5",
         )
         .bind(display_name)
-        .bind(role)
+        .bind(role.as_str())
         .bind(email_verified)
         .bind(now)
         .bind(id)
@@ -310,16 +311,6 @@ impl UserRepo for PostgresUserRepo {
         .map_err(|e| Error::Database { message: e.to_string() })?;
 
         self.find_by_id(id).await?.ok_or(Error::UserNotFound { id })
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Database {
-                message: e.to_string(),
-            })?;
-        Ok(())
     }
 
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
@@ -341,7 +332,7 @@ impl UserRepo for PostgresUserRepo {
         tx: &mut Self::Tx,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -354,7 +345,7 @@ impl UserRepo for PostgresUserRepo {
         .bind(id)
         .bind(email)
         .bind(display_name)
-        .bind(role)
+        .bind(role.as_str())
         .bind(email_verified)
         .bind(now)
         .bind(now)
@@ -382,7 +373,7 @@ impl UserRepo for PostgresUserRepo {
         tx: &mut Self::Tx,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -392,7 +383,7 @@ impl UserRepo for PostgresUserRepo {
              WHERE id = $5",
         )
         .bind(display_name)
-        .bind(role)
+        .bind(role.as_str())
         .bind(email_verified)
         .bind(now)
         .bind(id)
@@ -469,10 +460,14 @@ mod tests {
             database: "postgres".to_owned(),
             username: "postgres".to_owned(),
             password: "postgres".to_owned(),
+            password_file: None,
             max_connections: 2,
             connect_retry_attempts: 2,
             connect_retry_delay_ms: 1000,
             encrypt: false,
+            trust_cert: false,
+            ca_cert_path: None,
+            run_migrations_on_startup: true,
         }
     }
 
@@ -484,16 +479,16 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let user = repo
-            .create("alice@example.com", "Alice", "user", true)
+            .create("alice@example.com", "Alice", model::role::Role::User, true)
             .await
             .unwrap();
 
         assert_eq!(user.email, "alice@example.com");
         assert_eq!(user.display_name, "Alice");
-        assert_eq!(user.role, "user");
+        assert_eq!(user.role, model::role::Role::User);
         assert!(user.email_verified);
     }
 
@@ -505,9 +500,9 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
         let created = repo
-            .create("bob@example.com", "Bob", "user", true)
+            .create("bob@example.com", "Bob", model::role::Role::User, true)
             .await
             .unwrap();
 
@@ -525,7 +520,7 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let result = repo.find_by_id(uuid::Uuid::new_v4()).await.unwrap();
         assert!(result.is_none());
@@ -539,9 +534,9 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
         let created = repo
-            .create("carol@example.com", "Carol", "user", true)
+            .create("carol@example.com", "Carol", model::role::Role::User, true)
             .await
             .unwrap();
 
@@ -559,29 +554,17 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
-        repo.create("a@example.com", "A", "user", true)
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        repo.create("a@example.com", "A", model::role::Role::User, true)
             .await
             .unwrap();
-        repo.create("b@example.com", "B", "user", true)
+        repo.create("b@example.com", "B", model::role::Role::User, true)
             .await
             .unwrap();
 
         let (users, total) = repo.list(1, 10).await.unwrap();
         assert!(total >= 2);
         assert!(!users.is_empty());
-    }
-
-    #[tokio::test]
-    async fn health_check_should_pass() {
-        let container = Postgres::default().start().await.unwrap();
-        let port = container.get_host_port_ipv4(5432).await.unwrap();
-        let config = db_config(port);
-
-        migration::run(&config).await.unwrap();
-
-        let repo = crate::connect(&config).await.unwrap();
-        repo.health_check().await.unwrap();
     }
 
     #[tokio::test]
@@ -592,10 +575,10 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let user = repo
-            .create("jit@example.com", "JIT User", "user", true)
+            .create("jit@example.com", "JIT User", model::role::Role::User, true)
             .await
             .unwrap();
 
@@ -636,12 +619,18 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         // 使用交易完成完整的 JIT provisioning
         let mut tx = repo.begin_transaction().await.unwrap();
         let user = repo
-            .create_in_tx(&mut tx, "jit-tx@example.com", "JIT TX User", "user", true)
+            .create_in_tx(
+                &mut tx,
+                "jit-tx@example.com",
+                "JIT TX User",
+                model::role::Role::User,
+                true,
+            )
             .await
             .unwrap();
         let identity = repo

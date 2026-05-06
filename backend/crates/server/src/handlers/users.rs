@@ -86,21 +86,33 @@ pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route(
             "/users",
-            get(list_users).layer(axum_middleware::from_fn(require_manager)),
+            get(list_users).layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                require_manager,
+            )),
         )
         .route(
             "/users",
-            post(create_user).layer(axum_middleware::from_fn(require_admin)),
+            post(create_user).layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                require_admin,
+            )),
         )
         .route(
             "/users/{id}",
             get(get_user)
                 .put(update_user)
-                .layer(axum_middleware::from_fn(require_manager)),
+                .layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    require_manager,
+                )),
         )
         .route(
             "/users/{id}",
-            delete(delete_user).layer(axum_middleware::from_fn(require_admin)),
+            delete(delete_user).layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                require_admin,
+            )),
         )
         .with_state(state)
 }
@@ -206,9 +218,17 @@ async fn create_user(
     actor: Option<Extension<AuthUser>>,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserResponse>), UsersError> {
+    if let Err(e) = req.validate() {
+        return Err(UsersError::InvalidInput { message: e });
+    }
     let user = state
         .svc
-        .create_user(&req.email, &req.display_name, "user", false)
+        .create_user(
+            &req.email,
+            &req.display_name,
+            model::role::Role::User,
+            false,
+        )
         .await?;
 
     if let Some(Extension(actor)) = actor {
@@ -247,6 +267,9 @@ async fn update_user(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, UsersError> {
+    if let Err(e) = req.validate() {
+        return Err(UsersError::InvalidInput { message: e });
+    }
     let user = state
         .svc
         .update_user(id, req.display_name.as_deref())

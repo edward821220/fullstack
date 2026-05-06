@@ -99,7 +99,7 @@ impl UserRepo for MockUserRepo {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         let mut users = self.users.lock().unwrap();
@@ -113,7 +113,7 @@ impl UserRepo for MockUserRepo {
             id: Uuid::new_v4(),
             email: email.to_owned(),
             display_name: display_name.to_owned(),
-            role: role.to_owned(),
+            role,
             email_verified,
             created_at: now,
             updated_at: now,
@@ -228,7 +228,7 @@ impl UserRepo for MockUserRepo {
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         let mut users = self.users.lock().unwrap();
@@ -237,15 +237,11 @@ impl UserRepo for MockUserRepo {
             .find(|u| u.id == id)
             .ok_or(Error::UserNotFound { id })?;
         u.display_name = display_name.to_owned();
-        u.role = role.to_owned();
+        u.role = role;
         u.email_verified = email_verified;
         u.updated_at = time::OffsetDateTime::now_utc();
         u.version += 1;
         Ok(u.clone())
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        Ok(())
     }
 
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
@@ -257,7 +253,7 @@ impl UserRepo for MockUserRepo {
         tx: &mut Self::Tx,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         if tx.users.iter().any(|u| u.email == email) {
@@ -270,7 +266,7 @@ impl UserRepo for MockUserRepo {
             id: Uuid::new_v4(),
             email: email.to_owned(),
             display_name: display_name.to_owned(),
-            role: role.to_owned(),
+            role,
             email_verified,
             created_at: now,
             updated_at: now,
@@ -285,7 +281,7 @@ impl UserRepo for MockUserRepo {
         tx: &mut Self::Tx,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: model::role::Role,
         email_verified: bool,
     ) -> Result<User> {
         let u = tx
@@ -294,7 +290,7 @@ impl UserRepo for MockUserRepo {
             .find(|u| u.id == id)
             .ok_or(Error::UserNotFound { id })?;
         u.display_name = display_name.to_owned();
-        u.role = role.to_owned();
+        u.role = role;
         u.email_verified = email_verified;
         u.updated_at = time::OffsetDateTime::now_utc();
         u.version += 1;

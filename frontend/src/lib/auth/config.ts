@@ -1,10 +1,47 @@
 import type { NextAuthOptions } from "next-auth";
 import "./types";
 
+const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+function validateAuthConfig() {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (!isProduction) {
+    // Local development: skip strict validation to preserve dev experience.
+    return;
+  }
+
+  const nextauthSecret = process.env.NEXTAUTH_SECRET;
+  // During `next build`, NODE_ENV is "production" but secrets are injected at
+  // runtime. Skip validation if secrets are absent to avoid build-time failures.
+  if (!nextauthSecret) return;
+
+  if (nextauthSecret.length < 32) {
+    throw new Error("NEXTAUTH_SECRET must be set and at least 32 characters long in production.");
+  }
+
+  const oidcId = process.env.AUTH_OIDC_ID;
+  const oidcSecret = process.env.AUTH_OIDC_SECRET;
+  if (!oidcId || oidcId.trim().length === 0) {
+    throw new Error("AUTH_OIDC_ID must be set in production.");
+  }
+  if (!oidcSecret || oidcSecret.trim().length === 0) {
+    throw new Error("AUTH_OIDC_SECRET must be set in production.");
+  }
+
+  const oidcIssuer = process.env.AUTH_OIDC_ISSUER;
+  if (!oidcIssuer || oidcIssuer.trim().length === 0) {
+    throw new Error("AUTH_OIDC_ISSUER must be set in production.");
+  }
+  const isLocalhost = oidcIssuer.includes("localhost") || oidcIssuer.includes("127.0.0.1");
+  if (!isLocalhost && !oidcIssuer.startsWith("https://")) {
+    throw new Error("AUTH_OIDC_ISSUER must use https:// in production (non-localhost).");
+  }
+}
+
+validateAuthConfig();
+
 const issuer = process.env.AUTH_OIDC_ISSUER ?? "http://localhost:8080/dex";
 const wellKnownUrl = `${issuer}/.well-known/openid-configuration`;
-
-const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 // Cache for OIDC discovery metadata to avoid repeated network calls.
 // Module-level cache is safe in Next.js because the module is evaluated once per process.
@@ -126,7 +163,8 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken as string | undefined;
+      // accessToken is kept server-side only; client code calls backend
+      // through Next.js API proxy routes that attach the token on the server.
       session.error = token.error as string | undefined;
       if (token.role && session.user) {
         session.user.role = token.role as string;

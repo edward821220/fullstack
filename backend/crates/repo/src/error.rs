@@ -28,4 +28,7 @@ pub enum Error {
         resource: String,
         expected_version: i64,
     },
+
+    #[snafu(display("Invalid role: {role}"))]
+    InvalidRole { role: String },
 }

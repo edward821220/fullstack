@@ -12,7 +12,7 @@ export default async function DashboardPage() {
     redirect("/api/auth/signin/oidc?callbackUrl=/dashboard");
   }
 
-  const initialUsers = await getUsersPage(1, 8, session.accessToken);
+  const initialUsers = await getUsersPage(1, 8);
 
   return (
     <div className="space-y-8">

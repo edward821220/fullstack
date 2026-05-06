@@ -10,6 +10,7 @@ This guide walks through adding a new domain feature (e.g. `orders`, `transactio
 2. [Frontend — Add a Feature Module](#frontend--add-a-feature-module)
 3. [OpenAPI Type Regeneration](#openapi-type-regeneration)
 4. [Quick Checklist](#quick-checklist)
+5. [Documentation Updates](#documentation-updates)
 
 ---
 
@@ -343,4 +344,19 @@ The generation scripts are defined in `frontend/package.json`:
 ### Cross-Cutting
 
 - [ ] Run `mise run check:be` and `mise run check:fe`
-- [ ] Update this doc if the pattern changes
+- [ ] Run `mise run openapi:gen` after DTO or `utoipa` route changes
+- [ ] Update `CONTEXT.md` if the feature introduces new domain vocabulary, seams, or invariants
+- [ ] Update `README.md` if developers need new setup, env vars, ports, endpoints, or commands
+- [ ] Update `AGENTS.md` if future agents need a new implementation rule or quality gate
+- [ ] Update this doc if the vertical-slice pattern changes
+
+---
+
+## Documentation Updates
+
+Use [AGENTS.md](../AGENTS.md) as the authority for documentation ownership. For normal feature work:
+
+- **Domain language**: update `CONTEXT.md` when adding new concepts or renaming seams.
+- **Developer operation**: update `README.md` only when humans need new setup/run/config information.
+- **Agent rules**: update `AGENTS.md` only when the implementation pattern or validation rule changes.
+- **Generated API contract**: never hand-edit generated artifacts; run `mise run openapi:gen`.

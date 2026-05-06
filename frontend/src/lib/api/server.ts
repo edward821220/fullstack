@@ -1,15 +1,22 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth/config";
+import { cookies } from "next/headers";
+import { getToken } from "next-auth/jwt";
 import type { z } from "zod/v4";
 import { parse } from "@/lib/api/parse";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
-const BACKEND_INTERNAL = process.env.BACKEND_INTERNAL_URL ?? API_BASE;
+const API_BASE = process.env.API_BASE_URL ?? "http://localhost:3001/api/v1";
 
-/** Get the access token from the server-side session. */
+/** Get the access token from the encrypted JWT cookie (server-side only). */
 export async function getServerAccessToken(): Promise<string | undefined> {
-  const session = await getServerSession(authOptions);
-  return session?.accessToken ?? undefined;
+  const cookieStore = await cookies();
+  const token = await getToken({
+    req: {
+      headers: {
+        cookie: cookieStore.toString(),
+      },
+    } as unknown as Parameters<typeof getToken>[0]["req"],
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+  return (token?.accessToken as string | undefined) ?? undefined;
 }
 
 async function resolveToken(accessToken?: string): Promise<string | undefined> {
@@ -23,7 +30,7 @@ export async function get<T>(
   accessToken?: string,
 ): Promise<T> {
   const token = await resolveToken(accessToken);
-  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     cache: "no-store",
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -47,7 +54,7 @@ export async function post<T>(
   accessToken?: string,
 ): Promise<T> {
   const token = await resolveToken(accessToken);
-  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     cache: "no-store",
     headers: {
@@ -73,7 +80,7 @@ export async function put<T>(
   accessToken?: string,
 ): Promise<T> {
   const token = await resolveToken(accessToken);
-  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     method: "PUT",
     cache: "no-store",
     headers: {
@@ -98,7 +105,7 @@ export async function del<T>(
   accessToken?: string,
 ): Promise<T> {
   const token = await resolveToken(accessToken);
-  const response = await fetch(`${BACKEND_INTERNAL}${endpoint}`, {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     method: "DELETE",
     cache: "no-store",
     headers: {

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use axum::{Json, response::Response};
 use dto::{ErrorResponse, HealthResponse};
-use repo::AnyUserRepo;
-use svc::{UserService, UserServiceTrait};
+use svc::HealthChecker;
 
 use crate::problem::ProblemResponse;
 
@@ -31,9 +30,9 @@ pub async fn health() -> Json<HealthResponse> {
     )
 )]
 pub async fn health_ready(
-    svc: Arc<UserService<AnyUserRepo>>,
+    health: Arc<dyn HealthChecker>,
 ) -> Result<Json<HealthResponse>, Response> {
-    match svc.health_check().await {
+    match health.check().await {
         Ok(_) => Ok(Json(HealthResponse {
             status: "ready".to_owned(),
         })),

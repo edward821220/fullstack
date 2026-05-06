@@ -4,6 +4,22 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 
 > **Status**: Template candidate with OIDC, REST, gRPC, Prometheus metrics, OTLP export, and a reusable protected frontend slice.
 
+## Who This Is For
+
+This README is the human developer entry point. Keep it focused on setup, local operation, important endpoints, and commands developers need on day one.
+
+For implementation rules, architecture conventions, code style, quality gates, and documentation-update discipline, use [AGENTS.md](./AGENTS.md).
+
+## Documentation Map
+
+| File | Audience | Purpose |
+|------|----------|---------|
+| [README.md](./README.md) | Developers | Local setup, run commands, endpoints, configuration entry points |
+| [AGENTS.md](./AGENTS.md) | AI agents | Architecture rules, coding conventions, quality gates, doc-update rules |
+| [CONTEXT.md](./CONTEXT.md) | AI agents + developers | Domain vocabulary, seam names, architectural language |
+| [docs/how-to-add-feature.md](./docs/how-to-add-feature.md) | AI agents + developers | Step-by-step vertical-slice feature workflow |
+| `docs/adr/` | AI agents + developers | Accepted architectural decisions and trade-offs |
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -12,12 +28,10 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 | Backend gRPC | Rust, tonic |
 | Database (default) | MS SQL Server |
 | Database (alternative) | PostgreSQL (sqlx) |
-| Migrations | refinery (MS SQL + PostgreSQL) |
-| Error Handling | SNAFU |
-| Observability | tracing, OTLP exporter, Prometheus `/metrics` |
-| Auth | Generic OIDC (Dex, Keycloak, Azure AD, Google, Bank SSO) |
-| Authorization | Hierarchical RBAC enforced on user endpoints (Admin > Manager > User). Admin: create/delete; Manager+: list/get/update. Auth-disabled mode passes through. Fine-grained ACLs should be added per project. |
-| Frontend | TypeScript, Next.js (App Router) — protected dashboard slice |
+| Migrations | refinery |
+| Auth | Generic OIDC (Dex, Keycloak, Azure AD, Bank SSO) |
+| Authorization | Hierarchical RBAC (Admin > Manager > User) |
+| Frontend | TypeScript, Next.js (App Router) |
 | Styling | Tailwind CSS v4, shadcn/ui |
 | Validation | Zod |
 | State | Zustand + SWR |
@@ -33,59 +47,76 @@ mise trust
 lefthook install
 ```
 
+Install frontend dependencies once:
+
+```bash
+pnpm -C frontend install
+```
+
 ## Quick Start
 
-`docker-compose.yml` in this repository is for local development only.
+`docker-compose.yml` is for local development only.
 
-### 1. Create Local Development Config
+### 1. Create Local Config
 
 ```bash
 cp backend/config/local.example.yaml backend/config/local.yaml
+cp frontend/.env.example frontend/.env.local
 ```
 
 ### 2. Start Database
 
 ```bash
-# MS SQL Server (requires --profile mssql)
+# MS SQL Server (default)
 docker compose --profile mssql up -d
 
-# Or PostgreSQL (default, no profile needed)
-docker compose up -d
+# Or PostgreSQL
+docker compose --profile postgres up -d
 ```
 
-### 3. Run Backend & Frontend Locally
+### 3. Run Backend & Frontend
 
 ```bash
 # Backend (http://localhost:3001, gRPC :50051)
 mise run dev:be
 
-# Frontend — first run needs pnpm install
-pnpm -C frontend install
+# Frontend
 mise run dev:fe
 ```
 
-### 3. (Optional) Start Local OIDC Services
+### 4. (Optional) Enable Auth Locally
 
 ```bash
+# Start Dex (pre-configured with test users: admin/manager/user)
 docker compose --profile full up -d
-# Starts Dex + MS SQL Server for local auth testing
-# Dex is pre-configured with test users (admin/manager/user)
-```
 
-### 4. Frontend Environment
+# Enable auth in backend
+APP_AUTH__ENABLED=true mise run dev:be
 
-```bash
-cp frontend/.env.example frontend/.env.local
-# Edit .env.local with your OIDC provider settings
+# Frontend .env.local is already pre-configured for Dex
 ```
 
 ### 5. Run Checks
 
 ```bash
-mise run check:be check:fe
+mise run check
+# Or separately:
+# mise run check:be
+# mise run check:fe
 ```
 
 `pre-commit` runs a lighter `lefthook` gate: formatter, linter, and spell check only. Full compile/build/test verification stays in CI and in the final local check above.
+
+## Common Commands
+
+| Command | Purpose |
+|---------|---------|
+| `mise run dev:be` | Run backend server |
+| `mise run dev:fe` | Run frontend dev server |
+| `mise run check` | Run full backend + frontend verification |
+| `mise run check:be` | Run backend format, lint, check, tests |
+| `mise run check:fe` | Run frontend format, lint, typecheck, build, tests |
+| `mise run openapi:gen` | Regenerate OpenAPI JSON, TypeScript types, and Zod schemas |
 
 ## Endpoints
 
@@ -101,90 +132,47 @@ mise run check:be check:fe
 
 ## Configuration
 
-### Backend (`backend/config/default.yaml`)
-
-Override via `config/local.yaml` (gitignored) or `APP_*` env vars:
+Backend config lives in `backend/config/default.yaml` (production-safe defaults). Override via `config/local.yaml` (gitignored) or `APP_*` env vars:
 
 ```bash
 APP_SERVER__PORT=3002
-APP_DATABASE__DATABASE_URL="postgres://user:pass@localhost:5432/db"
 APP_OBSERVABILITY__OTLP__ENABLED=true
-APP_OBSERVABILITY__OTLP__ENDPOINT="http://localhost:4318/v1/traces"
 ```
 
-Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.database_url` to a `postgres://` connection string.
+Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
 
-Bootstrap a local override from the checked-in example:
+Frontend local environment lives in `frontend/.env.local`, copied from `frontend/.env.example`.
 
-```bash
-cp backend/config/local.example.yaml backend/config/local.yaml
-```
+### Auth
 
-### Auth Setup
+Auth is **enabled by default** in production config. For local development, `local.example.yaml` disables it.
 
-Auth is **enabled by default** in `backend/config/default.yaml`. For local development, create `backend/config/local.yaml` and set `auth.enabled: false` (the example file already does this).
-
-#### Local OIDC with Dex
-
-1. Start Dex only: `docker compose --profile oidc up -d`
-   Or start Dex + MS SQL Server together: `docker compose --profile full up -d`
-2. Copy `frontend/.env.example` to `frontend/.env.local` (pre-configured for Dex)
-3. Enable auth in backend config: `APP_AUTH__ENABLED=true`
-4. Test users: `admin`/`Admin123!`, `manager`/`Manager123!`, `user`/`User123!`
-
-Dex config and client credentials are pre-defined in `docker/dex/config.yaml`. No manual setup needed.
-
-For bank / enterprise onboarding, keep the frontend and backend aligned like this:
-
-1. Set `AUTH_OIDC_ID`, `AUTH_OIDC_SECRET`, and `AUTH_OIDC_ISSUER` in `frontend/.env.local`
-2. Enable backend auth in `backend/config/local.yaml` or `APP_AUTH__ENABLED=true`
-3. Choose backend `auth.discovery_mode`
-   - `discovery` when the IdP exposes `.well-known/openid-configuration`
-   - `manual` when the bank IdP requires explicit JWKS / issuer / token endpoints
-4. Map roles from the correct claim source via `auth.role_claim_source` (`roles` or `groups`)
-5. Turn on OTLP export when the project has a collector:
-   - `observability.otlp.enabled: true`
-   - `observability.otlp.endpoint: http://collector:4318/v1/traces`
-
-OIDC provider via frontend env vars (see `frontend/.env.example`):
+To connect a real IdP, set these in `frontend/.env.local`:
 
 | Variable | Description |
 |----------|-------------|
 | `AUTH_OIDC_ID` | OIDC client ID |
 | `AUTH_OIDC_SECRET` | OIDC client secret |
 | `AUTH_OIDC_ISSUER` | OIDC issuer URL |
-| `NEXTAUTH_URL` | Public frontend URL |
 | `NEXTAUTH_SECRET` | JWT encryption secret (`openssl rand -hex 32`) |
 
-For bank on-prem IdPs with self-signed certificates:
-```yaml
-# backend/config/local.yaml
-auth:
-  discovery_mode: "manual"
-  manual_endpoints:
-    jwks_uri: "https://idp.bank.com/keys"
-    issuer: "https://idp.bank.com"
-  danger_accept_invalid_certs: true
-```
+For bank on-prem IdPs with private-CA certificates, mount the CA bundle and use `SSL_CERT_FILE`. Do **not** disable TLS verification in production.
 
-### gRPC Health Service
+## Development Workflow
 
-The gRPC server provides a minimal `health.v1.HealthService` for Kubernetes liveness/readiness probes:
+Most implementation work is expected to be delegated to AI agents. Developers should:
 
-- `HealthCheck`
-
-This keeps the gRPC surface small and focused on infrastructure concerns. Project-specific gRPC contracts should be added per service.
-
-## Architecture
-
-See [AGENTS.md](./AGENTS.md) for detailed architecture and development conventions.
+- **Start from README**: use this file to set up and run the project.
+- **Send coding tasks to agents**: agents must follow [AGENTS.md](./AGENTS.md).
+- **Use the feature guide**: new domain features should follow [docs/how-to-add-feature.md](./docs/how-to-add-feature.md).
+- **Regenerate generated API artifacts**: run `mise run openapi:gen` after backend DTO or `utoipa` route changes.
+- **Run the full gate**: run `mise run check` before handing work off or merging.
 
 ## Scope & Limitations
 
 This template provides an authenticated skeleton. The following areas are intentionally minimal:
 
 - **Frontend**: One complete protected dashboard slice is included, but domain-specific forms, workflows, and authorization-aware navigation should still be added per project.
-- **gRPC**: `users.v1.UsersService` demonstrates the template pattern, but project-specific protobuf packages, richer error semantics, and cross-service contracts should still be expanded.
+- **gRPC**: `health.v1.HealthService` is included for k8s probes. Project-specific protobuf contracts should be added per service.
 - **Authorization**: Hierarchical role-based guard (Admin > Manager > User) is provided. Fine-grained permissions, resource-level ACLs, or ABAC should be implemented per project.
-- **OIDC**: Backend supports both discovery and manual endpoint modes (for enterprise IdPs with self-signed certs). Frontend uses standard OIDC discovery only — for non-standard IdPs, customize `frontend/src/lib/auth/config.ts`.
 - **Observability**: Prometheus metrics and OTLP trace export are wired, but collector topology, dashboards, alerts, and retention remain project-level work.

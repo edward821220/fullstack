@@ -1,7 +1,8 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use config::AppConfig;
-use server::{grpc, telemetry::init_tracing};
+use server::{grpc, health_checker::DbHealthChecker, telemetry::init_tracing};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -14,12 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .await
         .map_err(|error| std::io::Error::other(error.to_string()))?;
 
-    let repo = connect_to_database(&config).await?;
+    let (repo, health) = connect_to_database(&config).await?;
     let addr = config.grpc_addr()?;
 
     tracing::info!("Standalone gRPC server listening on {}", addr);
 
-    grpc::serve(config, repo, addr).await?;
+    grpc::serve(config, repo, health, addr).await?;
 
     telemetry.shutdown();
 
@@ -28,14 +29,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 async fn connect_to_database(
     config: &AppConfig,
-) -> Result<repo::AnyUserRepo, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (repo::AnyUserRepo, Arc<dyn svc::HealthChecker>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let mut attempt = 0;
 
     loop {
         attempt += 1;
 
         match repo::connect(&config.database).await {
-            Ok(repo) => return Ok(repo),
+            Ok((repo, probe)) => {
+                let health = Arc::new(DbHealthChecker::new(probe));
+                return Ok((repo, health));
+            }
             Err(error) => {
                 if attempt >= config.database.connect_retry_attempts {
                     return Err(Box::new(std::io::Error::other(error.to_string())));

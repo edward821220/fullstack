@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use model::role::Role;
 use model::user::User;
 use model::user_identity::UserIdentity;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -61,7 +62,13 @@ fn row_to_user(row: &tiberius::Row) -> Result<User> {
         })?,
         email: row.get::<&str, _>("email").unwrap_or("").to_owned(),
         display_name: row.get::<&str, _>("display_name").unwrap_or("").to_owned(),
-        role: row.get::<&str, _>("role").unwrap_or("user").to_owned(),
+        role: row
+            .get::<&str, _>("role")
+            .unwrap_or("user")
+            .parse()
+            .map_err(|e: model::role::UnknownRoleError| Error::Database {
+                message: format!("Invalid role in database: {e}"),
+            })?,
         email_verified: row.get::<bool, _>("email_verified").unwrap_or(false),
         created_at: row
             .get::<time::PrimitiveDateTime, _>("created_at")
@@ -159,7 +166,7 @@ impl UserRepo for MssqlUserRepo {
         &self,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         if self.find_by_email(email).await?.is_some() {
@@ -183,7 +190,7 @@ impl UserRepo for MssqlUserRepo {
                 &id,
                 &email,
                 &display_name,
-                &role,
+                &role.as_str(),
                 &email_verified,
                 &time::PrimitiveDateTime::new(now.date(), now.time()),
                 &time::PrimitiveDateTime::new(now.date(), now.time()),
@@ -421,7 +428,7 @@ impl UserRepo for MssqlUserRepo {
         &self,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -434,7 +441,7 @@ impl UserRepo for MssqlUserRepo {
             "UPDATE users SET display_name = @P1, role = @P2, email_verified = @P3, updated_at = @P4, version = version + 1
              OUTPUT INSERTED.id, INSERTED.email, INSERTED.display_name, INSERTED.role, INSERTED.email_verified, INSERTED.created_at, INSERTED.updated_at, INSERTED.version
              WHERE id = @P5",
-            &[&display_name, &role, &email_verified, &time::PrimitiveDateTime::new(now.date(), now.time()), &id],
+            &[&display_name, &role.as_str(), &email_verified, &time::PrimitiveDateTime::new(now.date(), now.time()), &id],
         )
         .await
         .map_err(|e| Error::Database { message: e.to_string() })?;
@@ -445,21 +452,6 @@ impl UserRepo for MssqlUserRepo {
 
         row.ok_or(Error::UserNotFound { id })
             .and_then(|r| row_to_user(&r))
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        let mut client = self.pool.get().await.map_err(|e| Error::Database {
-            message: e.to_string(),
-        })?;
-
-        client
-            .query("SELECT 1", &[])
-            .await
-            .map_err(|e| Error::Database {
-                message: e.to_string(),
-            })?;
-
-        Ok(())
     }
 
     async fn find_by_email_in_tx(&self, tx: &mut Self::Tx, email: &str) -> Result<Option<User>> {
@@ -490,7 +482,7 @@ impl UserRepo for MssqlUserRepo {
         tx: &mut Self::Tx,
         email: &str,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -504,7 +496,7 @@ impl UserRepo for MssqlUserRepo {
                 &id,
                 &email,
                 &display_name,
-                &role,
+                &role.as_str(),
                 &email_verified,
                 &time::PrimitiveDateTime::new(now.date(), now.time()),
                 &time::PrimitiveDateTime::new(now.date(), now.time()),
@@ -528,7 +520,7 @@ impl UserRepo for MssqlUserRepo {
         tx: &mut Self::Tx,
         id: Uuid,
         display_name: &str,
-        role: &str,
+        role: Role,
         email_verified: bool,
     ) -> Result<User> {
         let now = time::OffsetDateTime::now_utc();
@@ -539,7 +531,7 @@ impl UserRepo for MssqlUserRepo {
              WHERE id = @P5",
             &[
                 &display_name,
-                &role,
+                &role.as_str(),
                 &email_verified,
                 &time::PrimitiveDateTime::new(now.date(), now.time()),
                 &id,
@@ -612,10 +604,14 @@ mod tests {
             database: "master".to_owned(),
             username: "sa".to_owned(),
             password: "yourStrong(!)Password".to_owned(),
+            password_file: None,
             max_connections: 2,
             connect_retry_attempts: 5,
             connect_retry_delay_ms: 2000,
             encrypt: false,
+            trust_cert: false,
+            ca_cert_path: None,
+            run_migrations_on_startup: true,
         }
     }
 
@@ -631,16 +627,16 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let user = repo
-            .create("alice@example.com", "Alice", "user", true)
+            .create("alice@example.com", "Alice", model::role::Role::User, true)
             .await
             .unwrap();
 
         assert_eq!(user.email, "alice@example.com");
         assert_eq!(user.display_name, "Alice");
-        assert_eq!(user.role, "user");
+        assert_eq!(user.role, model::role::Role::User);
         assert!(user.email_verified);
     }
 
@@ -656,10 +652,10 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let created = repo
-            .create("bob@example.com", "Bob", "user", true)
+            .create("bob@example.com", "Bob", model::role::Role::User, true)
             .await
             .unwrap();
 
@@ -680,7 +676,7 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let result = repo.find_by_id(uuid::Uuid::new_v4()).await.unwrap();
         assert!(result.is_none());
@@ -698,33 +694,16 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let created = repo
-            .create("carol@example.com", "Carol", "user", true)
+            .create("carol@example.com", "Carol", model::role::Role::User, true)
             .await
             .unwrap();
 
         repo.delete(created.id).await.unwrap();
         let found = repo.find_by_id(created.id).await.unwrap();
         assert!(found.is_none());
-    }
-
-    #[tokio::test]
-    async fn health_check_should_pass() {
-        let container = MssqlServer::default()
-            .with_env_var("ACCEPT_EULA", "Y")
-            .with_env_var("MSSQL_PID", "Developer")
-            .start()
-            .await
-            .unwrap();
-        let port = container.get_host_port_ipv4(1433).await.unwrap();
-        let config = db_config(port);
-
-        migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
-
-        repo.health_check().await.unwrap();
     }
 
     #[tokio::test]
@@ -739,10 +718,10 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let user = repo
-            .create("jit@example.com", "JIT User", "user", true)
+            .create("jit@example.com", "JIT User", model::role::Role::User, true)
             .await
             .unwrap();
 
@@ -787,11 +766,17 @@ mod tests {
         let config = db_config(port);
 
         migration::run(&config).await.unwrap();
-        let repo = crate::connect(&config).await.unwrap();
+        let (repo, _probe) = crate::connect(&config).await.unwrap();
 
         let mut tx = repo.begin_transaction().await.unwrap();
         let user = repo
-            .create_in_tx(&mut tx, "jit-tx@example.com", "JIT TX User", "user", true)
+            .create_in_tx(
+                &mut tx,
+                "jit-tx@example.com",
+                "JIT TX User",
+                model::role::Role::User,
+                true,
+            )
             .await
             .unwrap();
         let identity = repo

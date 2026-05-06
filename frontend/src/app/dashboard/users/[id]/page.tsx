@@ -14,8 +14,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const accessToken = session.accessToken ?? "";
-  const user = await getUser(id, accessToken).catch(() => null);
+  const user = await getUser(id).catch(() => null);
   if (!user) {
     notFound();
   }

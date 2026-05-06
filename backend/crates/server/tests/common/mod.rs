@@ -6,7 +6,7 @@ pub fn make_auth_user(role: &str) -> AuthUser {
         user_id: Uuid::new_v4(),
         email: format!("{role}@example.com"),
         display_name: format!("{role}-user"),
-        role: role.to_owned(),
+        role: role.parse().unwrap_or(model::role::Role::User),
         sub: format!("sub-{role}"),
     }
 }

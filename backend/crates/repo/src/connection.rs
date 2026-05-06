@@ -1,13 +1,15 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use config::DatabaseConfig;
 
+use crate::health::HealthProbe;
 use crate::user_repo::AnyUserRepo;
 use crate::user_repo::mssql::MssqlUserRepo;
 use crate::user_repo::postgres::PostgresUserRepo;
 use crate::{Error, Result};
 
-pub async fn connect(config: &DatabaseConfig) -> Result<AnyUserRepo> {
+pub async fn connect(config: &DatabaseConfig) -> Result<(AnyUserRepo, Arc<dyn HealthProbe>)> {
     use config::DatabaseDriver;
 
     match config.driver() {
@@ -22,7 +24,9 @@ pub async fn connect(config: &DatabaseConfig) -> Result<AnyUserRepo> {
                     message: e.to_string(),
                 })?;
 
-            Ok(AnyUserRepo::Postgres(PostgresUserRepo::new(pool)))
+            let probe: Arc<dyn HealthProbe> = Arc::new(pool.clone());
+            let repo = AnyUserRepo::Postgres(PostgresUserRepo::new(pool));
+            Ok((repo, probe))
         }
         DatabaseDriver::Mssql => {
             let tiberius_config = config
@@ -37,10 +41,9 @@ pub async fn connect(config: &DatabaseConfig) -> Result<AnyUserRepo> {
                     message: e.to_string(),
                 })?;
 
-            Ok(AnyUserRepo::Mssql(MssqlUserRepo::new(
-                pool,
-                tiberius_config,
-            )))
+            let probe: Arc<dyn HealthProbe> = Arc::new(pool.clone());
+            let repo = AnyUserRepo::Mssql(MssqlUserRepo::new(pool, tiberius_config));
+            Ok((repo, probe))
         }
     }
 }

@@ -2,6 +2,7 @@
 
 This document defines the domain language for the fullstack-template backend.
 When naming modules, seams, or concepts during architecture work, use these terms exactly.
+Keep setup commands and implementation checklists in `README.md`, `AGENTS.md`, or `docs/how-to-add-feature.md`; this file is only for shared vocabulary and invariants.
 
 ## Core Entities
 

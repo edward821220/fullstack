@@ -3,6 +3,7 @@ pub mod authz;
 pub mod bootstrap;
 pub mod grpc;
 pub mod handlers;
+pub mod health_checker;
 pub mod middleware;
 pub mod openapi;
 pub mod problem;

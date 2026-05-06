@@ -19,8 +19,14 @@ export const zErrorResponse = z.object({
 
 export const zHealthResponse = z.object({
   status: z.string(),
-  version: z.string(),
 });
+
+/**
+ * Hierarchical role used across the domain layer.
+ *
+ * Ordering: Admin > Manager > User.
+ */
+export const zRole = z.enum(["admin", "manager", "user"]);
 
 export const zUpdateUserRequest = z.object({
   display_name: z.string().min(1).max(100).nullish(),
@@ -32,8 +38,16 @@ export const zUserResponse = z.object({
   email: z.string(),
   email_verified: z.boolean(),
   id: z.uuid(),
-  role: z.string(),
+  role: zRole,
   updated_at: z.string(),
+  version: z.coerce
+    .bigint()
+    .min(BigInt("-9223372036854775808"), {
+      error: "Invalid value: Expected int64 to be >= -9223372036854775808",
+    })
+    .max(BigInt("9223372036854775807"), {
+      error: "Invalid value: Expected int64 to be <= 9223372036854775807",
+    }),
 });
 
 export const zPaginatedUserResponse = z.object({
