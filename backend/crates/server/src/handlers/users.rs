@@ -1,6 +1,6 @@
+use crate::error::AppError;
 use crate::middleware::oidc::AuthUser;
 use crate::middleware::{require_admin, require_manager};
-use crate::problem::ProblemResponse;
 use crate::state::AppState;
 use axum::{
     Extension, Json, Router,
@@ -13,73 +13,10 @@ use dto::{
     CreateUserRequest, ErrorResponse, PaginatedUserResponse, PaginationParams, UpdateUserRequest,
     UserResponse,
 };
-use snafu::Snafu;
 use std::sync::Arc;
 use svc::AuditEvent;
 use svc::UserServiceTrait;
 use uuid::Uuid;
-
-#[derive(Debug, Snafu)]
-pub enum UsersError {
-    #[snafu(display("User not found: {id}"))]
-    UserNotFound { id: Uuid },
-    #[snafu(display("Invalid input: {message}"))]
-    InvalidInput { message: String },
-    #[snafu(display("Conflict: {resource} was modified (expected version {expected_version})"))]
-    Conflict {
-        resource: String,
-        expected_version: i64,
-    },
-    #[snafu(display("Internal error: {source}"))]
-    Internal { source: svc::Error },
-}
-
-impl From<svc::Error> for UsersError {
-    fn from(source: svc::Error) -> Self {
-        match &source {
-            svc::Error::NotFound { id } => UsersError::UserNotFound { id: *id },
-            svc::Error::InvalidInput { message } => UsersError::InvalidInput {
-                message: message.clone(),
-            },
-            svc::Error::Conflict {
-                resource,
-                expected_version,
-            } => UsersError::Conflict {
-                resource: resource.clone(),
-                expected_version: *expected_version,
-            },
-            _ => UsersError::Internal { source },
-        }
-    }
-}
-
-impl axum::response::IntoResponse for UsersError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, detail) = match &self {
-            UsersError::UserNotFound { id } => (
-                StatusCode::NOT_FOUND,
-                format!("User with id {} not found", id),
-            ),
-            UsersError::InvalidInput { message } => (StatusCode::BAD_REQUEST, message.clone()),
-            UsersError::Conflict {
-                resource,
-                expected_version,
-            } => (
-                StatusCode::CONFLICT,
-                format!(
-                    "{} was modified concurrently (expected version {})",
-                    resource, expected_version
-                ),
-            ),
-            UsersError::Internal { .. } => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_owned(),
-            ),
-        };
-
-        ProblemResponse::new(status, detail).into_response()
-    }
-}
 
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
@@ -142,19 +79,19 @@ fn to_response(user: &model::user::User) -> UserResponse {
 async fn list_users(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationParams>,
-) -> Result<Json<PaginatedUserResponse>, UsersError> {
+) -> Result<Json<PaginatedUserResponse>, AppError> {
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20);
 
     if page < 1 {
-        return Err(UsersError::InvalidInput {
+        return Err(AppError(svc::Error::InvalidInput {
             message: "page must be >= 1".to_owned(),
-        });
+        }));
     }
     if !(1..=100).contains(&per_page) {
-        return Err(UsersError::InvalidInput {
+        return Err(AppError(svc::Error::InvalidInput {
             message: "per_page must be between 1 and 100".to_owned(),
-        });
+        }));
     }
 
     let (users, total) = state.svc.list_users(page, per_page).await?;
@@ -190,7 +127,7 @@ async fn list_users(
 async fn get_user(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<UserResponse>, UsersError> {
+) -> Result<Json<UserResponse>, AppError> {
     let user = state.svc.get_user(id).await?;
 
     Ok(Json(to_response(&user)))
@@ -216,9 +153,9 @@ async fn create_user(
     State(state): State<Arc<AppState>>,
     actor: Option<Extension<AuthUser>>,
     Json(req): Json<CreateUserRequest>,
-) -> Result<(StatusCode, Json<UserResponse>), UsersError> {
+) -> Result<(StatusCode, Json<UserResponse>), AppError> {
     if let Err(e) = req.validate() {
-        return Err(UsersError::InvalidInput { message: e });
+        return Err(AppError(svc::Error::InvalidInput { message: e }));
     }
     let user = state
         .svc
@@ -265,9 +202,9 @@ async fn update_user(
     actor: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
-) -> Result<Json<UserResponse>, UsersError> {
+) -> Result<Json<UserResponse>, AppError> {
     if let Err(e) = req.validate() {
-        return Err(UsersError::InvalidInput { message: e });
+        return Err(AppError(svc::Error::InvalidInput { message: e }));
     }
     let user = state
         .svc
@@ -306,7 +243,7 @@ async fn delete_user(
     State(state): State<Arc<AppState>>,
     actor: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, UsersError> {
+) -> Result<StatusCode, AppError> {
     state.svc.delete_user(id).await?;
 
     if let Some(Extension(actor)) = actor {

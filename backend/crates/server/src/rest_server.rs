@@ -1,7 +1,7 @@
 use crate::audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
 use crate::handlers::{health, users};
 use crate::middleware::OidcValidator;
-use crate::middleware::oidc::oidc_middleware;
+use crate::middleware::oidc::layer::oidc_middleware;
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use axum::extract::DefaultBodyLimit;

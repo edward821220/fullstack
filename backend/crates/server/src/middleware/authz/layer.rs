@@ -1,20 +1,14 @@
-pub use crate::authz::domain::{AuthzError, Role, authorize_role};
+use super::{AuthzError, Role, authorize_role};
 use crate::middleware::oidc::{AuthDisabledMarker, AuthUser};
-use crate::problem::ProblemResponse;
 use crate::state::AppState;
 use axum::{
     extract::{Request, State},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use std::sync::Arc;
 use svc::AuditEvent;
-impl IntoResponse for AuthzError {
-    fn into_response(self) -> Response {
-        let AuthzError::Forbidden(detail) = self;
-        ProblemResponse::forbidden(detail).into_response()
-    }
-}
+
 async fn enforce_role(
     State(state): State<Arc<AppState>>,
     minimum_role: Role,
@@ -50,6 +44,7 @@ async fn enforce_role(
         }
     }
 }
+
 pub async fn require_admin(
     state: State<Arc<AppState>>,
     req: Request,
@@ -57,6 +52,7 @@ pub async fn require_admin(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::Admin, req, next).await
 }
+
 pub async fn require_manager(
     state: State<Arc<AppState>>,
     req: Request,
@@ -64,6 +60,7 @@ pub async fn require_manager(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::Manager, req, next).await
 }
+
 pub async fn require_user(
     state: State<Arc<AppState>>,
     req: Request,
@@ -71,6 +68,7 @@ pub async fn require_user(
 ) -> Result<Response, AuthzError> {
     enforce_role(state, Role::User, req, next).await
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

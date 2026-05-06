@@ -1,6 +1,7 @@
 use crate::audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
 use crate::middleware::OidcValidator;
-use crate::middleware::oidc::{Claims, JwksResponse};
+use crate::middleware::oidc::client::JwksResponse;
+use crate::middleware::oidc::validator::Claims;
 use crate::state::AppState;
 use config::{AppConfig, DiscoveryMode};
 use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};

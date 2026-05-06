@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod authz;
 pub mod bootstrap;
+pub mod error;
 pub mod grpc;
 pub mod handlers;
 pub mod health_checker;
