@@ -1,9 +1,3 @@
-use std::fmt;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::mpsc;
-use tracing::Level;
-
 /// Controls how PII is handled in audit events.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum PiiMode {
@@ -84,14 +78,14 @@ impl AuditEvent {
         }
     }
 
-    pub fn level(&self) -> Level {
+    pub fn level(&self) -> tracing::Level {
         match self {
             Self::AuthSuccess { .. }
             | Self::UserCreated { .. }
             | Self::UserUpdated { .. }
             | Self::UserDeleted { .. }
-            | Self::UserProvisioned { .. } => Level::INFO,
-            Self::AuthFailure { .. } | Self::RoleDenied { .. } => Level::WARN,
+            | Self::UserProvisioned { .. } => tracing::Level::INFO,
+            Self::AuthFailure { .. } | Self::RoleDenied { .. } => tracing::Level::WARN,
         }
     }
 
@@ -132,8 +126,8 @@ impl AuditEvent {
     }
 }
 
-impl fmt::Display for AuditEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for AuditEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AuthSuccess {
                 user_id,
@@ -185,100 +179,4 @@ impl fmt::Display for AuditEvent {
 pub enum AuditError {
     #[snafu(display("Export failed: {message}"))]
     Export { message: String },
-}
-
-#[async_trait::async_trait]
-pub trait AuditExporter: Send + Sync {
-    async fn export(&self, event: AuditEvent) -> Result<(), AuditError>;
-}
-
-/// Metrics for audit delivery health.
-#[derive(Debug, Default)]
-pub struct AuditMetrics {
-    pub events_dropped: AtomicU64,
-    pub exports_failed: AtomicU64,
-}
-
-pub struct AuditService {
-    sender: mpsc::Sender<AuditEvent>,
-    metrics: Arc<AuditMetrics>,
-    pii_mode: PiiMode,
-}
-
-impl AuditService {
-    pub fn new(exporter: Arc<dyn AuditExporter>, pii_mode: PiiMode) -> Self {
-        // Bounded channel provides backpressure; excess events are dropped.
-        const CHANNEL_CAPACITY: usize = 10_000;
-        let (sender, mut receiver) = mpsc::channel::<AuditEvent>(CHANNEL_CAPACITY);
-        let metrics = Arc::new(AuditMetrics::default());
-        let metrics_clone = Arc::clone(&metrics);
-
-        tokio::spawn(async move {
-            while let Some(event) = receiver.recv().await {
-                let mut retries = 0;
-                let max_retries = 3;
-                let mut delay_ms = 100;
-
-                loop {
-                    match exporter.export(event.clone()).await {
-                        Ok(()) => break,
-                        Err(e) => {
-                            retries += 1;
-                            if retries > max_retries {
-                                tracing::error!(
-                                    "Audit export failed after {max_retries} retries: {e}"
-                                );
-                                metrics_clone.exports_failed.fetch_add(1, Ordering::Relaxed);
-                                break;
-                            }
-                            tracing::warn!(
-                                "Audit export failed (retry {retries}/{max_retries}): {e}"
-                            );
-                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                            delay_ms *= 2;
-                        }
-                    }
-                }
-            }
-        });
-
-        Self {
-            sender,
-            metrics,
-            pii_mode,
-        }
-    }
-
-    pub fn record(&self, event: AuditEvent) {
-        let event = if self.pii_mode == PiiMode::Redact {
-            event.redacted()
-        } else {
-            event
-        };
-
-        match self.sender.try_send(event) {
-            Ok(()) => {}
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                let dropped = self.metrics.events_dropped.fetch_add(1, Ordering::Relaxed) + 1;
-                tracing::warn!("Audit channel full, event dropped (total_dropped={dropped})");
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                tracing::error!("Audit channel closed, event dropped");
-            }
-        }
-    }
-
-    pub fn metrics(&self) -> &AuditMetrics {
-        &self.metrics
-    }
-}
-
-/// Writes directly to tracing.
-pub fn log_audit_event(event: &AuditEvent) {
-    match event.level() {
-        Level::INFO => tracing::info!(target: "audit", "{event}"),
-        Level::WARN => tracing::warn!(target: "audit", "{event}"),
-        Level::ERROR => tracing::error!(target: "audit", "{event}"),
-        _ => tracing::debug!(target: "audit", "{event}"),
-    }
 }
