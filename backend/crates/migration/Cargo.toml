@@ -2,6 +2,7 @@
 name = "migration"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "migration"
@@ -11,6 +12,10 @@ path = "src/main.rs"
 config = { path = "../config" }
 refinery.workspace = true
 tokio-postgres.workspace = true
+tokio-postgres-rustls.workspace = true
+tokio-rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
 tiberius.workspace = true
 tokio-util.workspace = true
 url.workspace = true

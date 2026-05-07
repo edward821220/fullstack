@@ -2,6 +2,7 @@
 name = "server"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "server"
@@ -14,15 +15,27 @@ model = { path = "../model" }
 dto = { path = "../dto" }
 config = { path = "../config" }
 migration = { path = "../migration" }
+infra = { path = "../infra" }
+grpc = { path = "../grpc" }
 axum.workspace = true
 sqlx.workspace = true
 tower.workspace = true
+tower_governor.workspace = true
 tower-http.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp = { workspace = true, features = [
+  "trace",
+  "grpc-tonic",
+  "http-proto",
+  "reqwest-client",
+] }
+opentelemetry_sdk.workspace = true
 jsonwebtoken.workspace = true
 openidconnect.workspace = true
 reqwest.workspace = true
@@ -33,9 +46,20 @@ uuid.workspace = true
 clap.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
-tonic-prost = "0.14"
+tonic-prost.workspace = true
 prost.workspace = true
-tokio-stream = "0.1"
+tokio-stream.workspace = true
+axum-prometheus.workspace = true
+async-trait.workspace = true
+time.workspace = true
+tokio-rustls.workspace = true
+rustls-pemfile.workspace = true
+rustls-native-certs.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+repo = { path = "../repo", features = ["test-helpers"] }
+time = { workspace = true, features = ["macros"] }
 
 [build-dependencies]
 tonic-prost-build.workspace = true

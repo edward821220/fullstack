@@ -1,41 +1,99 @@
-# Default configuration — override with config/local.yaml or APP_* env vars
+# ═══════════════════════════════════════════════════════════
+# PRODUCTION-SAFE DEFAULT CONFIGURATION
+# ═══════════════════════════════════════════════════════════
+# This file is version-controlled and serves as the secure baseline.
+# Every value here must be safe for production / bank on-prem deployment.
+#
+# To run locally, create config/local.yaml (gitignored):
+#   cp config/local.example.yaml config/local.yaml
+#
+# Without local.yaml the server will refuse to start with insecure defaults.
+# ═══════════════════════════════════════════════════════════
+
 server:
+  environment: "production"
   host: "0.0.0.0"
   port: 3001
   timeout_seconds: 30
   shutdown_timeout_seconds: 30
-  cors_origins:
-    - "http://localhost:3000"
+  tls:
+    enabled: true
+    cert_path: ""
+    key_path: ""
+  cors_origins: []
+  docs_enabled: false
+  max_request_body_size: 1048576
 
 database:
   driver: mssql
-  database_url: "mssql://sa:YourStrong!Passw0rd@localhost:1433/fullstack_template"
+  host: ""
+  port: 1433
+  database: ""
+  username: ""
+  password: ""
+  password_file: null
   max_connections: 20
   connect_retry_attempts: 5
   connect_retry_delay_ms: 2000
-  encrypt: false
+  encrypt: true
+  run_migrations_on_startup: false
 
 auth:
-  enabled: false
-  issuer_url: "http://localhost:8080/dex"
-  audience:
-    - "fullstack-template"
+  enabled: true
+  issuer_url: ""
+  audience: []
   jwks_cache_duration_secs: 3600
   allowed_email_domains: []
+  allow_all_domains: false
   role_claim_source: "groups"
   discovery_mode: "discovery"
+  manual_endpoints: null
   danger_accept_invalid_certs: false
-  # manual_endpoints:
-  #   jwks_uri: "https://idp.example.com/oauth/v2/keys"
-  #   issuer: "https://idp.example.com"
-  #   authorization_endpoint: "https://idp.example.com/oauth/v2/authorize"
-  #   token_endpoint: "https://idp.example.com/oauth/v2/token"
+  allowed_algorithms:
+    - RS256
+    - RS384
+    - RS512
+    - ES256
+    - ES384
+    - ES512
+  require_email_verified: true
+  clock_skew_seconds: 60
 
 observability:
-  log_format: "pretty"
+  log_format: "json"
   log_level: "info"
-  service_name: "fullstack-template"
+  service_name: ""
+  metrics_enabled: false
+  otlp:
+    enabled: false
+    endpoint: ""
+    protocol: "http"
+    timeout_seconds: 5
 
 grpc:
+  enabled: false
   host: "0.0.0.0"
   port: 50051
+  auth_enabled: false
+  tls:
+    enabled: false
+    cert_path: ""
+    key_path: ""
+    ca_cert_path: null
+
+rate_limit:
+  # Production baseline: enabled with conservative defaults.
+  # Local development should override to false in local.yaml.
+  enabled: true
+  requests_per_second: 10
+  burst_size: 20
+
+audit:
+  exporter: "syslog"
+  pii_mode: "redact"
+  syslog:
+    host: ""
+    port: 514
+    protocol: "udp"
+    facility: "local0"
+    tls_enabled: false

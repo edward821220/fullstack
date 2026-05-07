@@ -1,59 +1,48 @@
 name: Backend CI
 on:
-  push:
-    paths:
-      - "backend/**"
-      - "proto/**"
-      - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
       - "proto/**"
+      - "mise.toml"
       - ".github/workflows/backend.yml"
 
 env:
   CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
 jobs:
   check:
-    name: Lint, Format, Typecheck & Test
+    name: Full backend check
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          components: clippy, rustfmt
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo check --all-targets --all-features
-      - run: cargo test --workspace
+          cache: true
+      - name: Add rustfmt and clippy components
+        run: rustup component add --toolchain "$(rustup show active-toolchain | cut -d' ' -f1)" rustfmt clippy
+      - run: mise run check:be
 
-  cargo-deny:
-    name: License & Advisory Audit
+  supply-chain:
+    name: Supply-chain audit
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          command: check all
-
-  spellcheck:
-    name: Spell Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: crate-ci/typos@v2
+          cache: true
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+        working-directory: backend
+      - name: Run cargo-deny
+        run: cargo deny check
+        working-directory: backend
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+        working-directory: backend
+      - name: Run cargo-audit
+        run: cargo audit
+        working-directory: backend

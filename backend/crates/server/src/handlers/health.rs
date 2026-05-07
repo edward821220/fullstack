@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
-use axum::{Json, response::Response};
-use dto::HealthResponse;
-use svc::{UserService, UserServiceTrait};
-
 use crate::problem::ProblemResponse;
+use axum::{Json, response::Response};
+use dto::{ErrorResponse, HealthResponse};
+use std::sync::Arc;
+use svc::HealthChecker;
 
 #[utoipa::path(
     get,
@@ -17,20 +15,29 @@ use crate::problem::ProblemResponse;
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
     })
 }
 
-pub async fn health_ready(svc: Arc<UserService>) -> Result<Json<HealthResponse>, Response> {
-    match svc.health_check().await {
+#[utoipa::path(
+    get,
+    path = "/health/ready",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is ready (database reachable)", body = HealthResponse),
+        (status = 503, description = "Service is not ready", body = ErrorResponse),
+    )
+)]
+pub async fn health_ready(
+    health: Arc<dyn HealthChecker>,
+) -> Result<Json<HealthResponse>, Response> {
+    match health.check().await {
         Ok(_) => Ok(Json(HealthResponse {
             status: "ready".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
         })),
         Err(e) => {
             tracing::error!("Health ready check failed: {e}");
             Err(Response::from(ProblemResponse::service_unavailable(
-                format!("Database health check failed: {e}"),
+                "Service is not ready".to_owned(),
             )))
         }
     }

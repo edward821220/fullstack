@@ -1,15 +1,15 @@
-# ├── Stage 1: Dependencies
-FROM node:24-alpine AS deps
+# ├── Stage 1: Base
+FROM node:24-alpine@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f AS base
 RUN corepack enable && corepack prepare pnpm@10 --activate
 
+# ├── Stage 2: Dependencies
+FROM base AS deps
 WORKDIR /app
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# ├── Stage 2: Build
-FROM node:24-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@10 --activate
-
+# ├── Stage 3: Build
+FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ .
@@ -17,10 +17,8 @@ COPY frontend/ .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
-# ├── Stage 3: Runtime
-FROM node:24-alpine AS runner
-RUN corepack enable && corepack prepare pnpm@10 --activate
-
+# ├── Stage 4: Runtime
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

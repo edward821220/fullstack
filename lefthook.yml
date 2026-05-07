@@ -1,28 +1,24 @@
+commit-msg:
+  parallel: true
+  jobs:
+    - name: commitlint
+      run: mise exec -- committed --commit-file {1}
+
 pre-commit:
   parallel: true
-  commands:
-    backend-check:
+  jobs:
+    - name: backend-fmt
       glob: "backend/**/*.rs"
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    backend-fmt:
+      run: mise exec -- cargo fmt --manifest-path backend/Cargo.toml --all -- --check
+    - name: backend-lint
       glob: "backend/**/*.rs"
-      run: cargo fmt --all
-      stage_fixed: true
-    frontend-fmt:
+      run: mise exec -- cargo clippy --manifest-path backend/Cargo.toml --all-targets --all-features -- -D warnings
+    - name: frontend-fmt
       glob: "frontend/**/*.{ts,tsx,js,jsx,json,css,md,mjs}"
-      run: pnpm -C frontend format
-      stage_fixed: true
-    frontend-lint:
+      run: mise exec -- pnpm -C frontend format:check
+    - name: frontend-lint
       glob: "frontend/**/*.{ts,tsx,js,jsx}"
-      run: pnpm -C frontend lint
-    typos:
-      glob: "**/*.{rs,ts,tsx,md,yml,yaml,toml}"
-      run: typos
-
-pre-push:
-  parallel: true
-  commands:
-    test-backend:
-      run: cargo test --workspace
-    test-frontend:
-      run: pnpm -C frontend test
+      run: mise exec -- pnpm -C frontend lint
+    - name: spellcheck
+      glob: "**/*.{rs,ts,tsx,js,jsx,md,yml,yaml,toml,json}"
+      run: mise exec -- typos --exclude frontend/pnpm-lock.yaml --exclude backend/Cargo.lock

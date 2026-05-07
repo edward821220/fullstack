@@ -2,6 +2,11 @@
 name = "grpc"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "grpc"
+path = "src/lib.rs"
 
 [[bin]]
 name = "grpc-server"
@@ -14,18 +19,21 @@ model = { path = "../model" }
 dto = { path = "../dto" }
 config = { path = "../config" }
 migration = { path = "../migration" }
+infra = { path = "../infra" }
 tonic.workspace = true
 tonic-health.workspace = true
-tonic-prost = "0.14"
+tonic-prost.workspace = true
 prost.workspace = true
 tokio.workspace = true
-tokio-stream = "0.1"
+tokio-stream.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 snafu.workspace = true
 uuid.workspace = true
+reqwest.workspace = true
+jsonwebtoken.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true

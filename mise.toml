@@ -1,17 +1,57 @@
 [tools]
 rust = "1.90.0"
 node = "24"
-pnpm = "10"
+"github:pnpm/pnpm" = "10"
+lefthook = "latest"
+"github:crate-ci/typos" = "latest"
+committed = "latest"
 
 [env]
 CARGO_TERM_COLOR = "always"
 
-[tasks]
-dev-backend = { run = "cargo run --bin server", dir = "backend" }
-dev-frontend = { run = "pnpm dev", dir = "frontend" }
+[tasks."dev:be"]
+run = "cargo run --bin server"
+dir = "backend"
 
-fmt = { run = "cargo fmt --all && cd ../frontend && pnpm format", dir = "backend" }
+[tasks."dev:fe"]
+run = "pnpm dev"
+dir = "frontend"
 
-check = "cd backend && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check --all-targets --all-features && cargo test --workspace && cd .. && cd frontend && pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
-check-backend = { run = "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check --all-targets --all-features && cargo test --workspace", dir = "backend" }
-check-frontend = { run = "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test", dir = "frontend" }
+[tasks."check:be"]
+dir = "backend"
+run = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --all-targets --all-features -- -D warnings",
+  "typos .. --exclude ../frontend --exclude Cargo.lock",
+  "cargo check --all-targets --all-features",
+  "cargo test --workspace",
+]
+
+[tasks."check:fe"]
+dir = "frontend"
+run = [
+  "pnpm format:check",
+  "pnpm lint",
+  "typos . --exclude pnpm-lock.yaml",
+  "pnpm typecheck",
+  "pnpm build",
+  "pnpm test",
+]
+
+[tasks.check]
+description = "Run full backend and frontend verification"
+run = ["mise run check:be", "mise run check:fe"]
+
+[tasks."openapi:gen:be"]
+description = "Generate OpenAPI JSON spec from backend"
+dir = "backend"
+run = "cargo run -p server -- gen-openapi > ../docs/openapi.json"
+
+[tasks."openapi:gen:fe"]
+description = "Generate TypeScript types and Zod schemas from OpenAPI spec"
+dir = "frontend"
+run = "pnpm openapi:gen"
+
+[tasks."openapi:gen"]
+description = "Generate OpenAPI spec from backend and convert to TypeScript types"
+run = ["mise run openapi:gen:be", "mise run openapi:gen:fe"]

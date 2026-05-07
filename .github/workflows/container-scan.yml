@@ -1,0 +1,59 @@
+name: Container security scan
+on:
+  pull_request:
+    paths:
+      - "docker/**"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/container-scan.yml"
+  schedule:
+    - cron: "0 6 * * 1" # Weekly on Monday at 06:00 UTC
+
+jobs:
+  scan-backend:
+    name: Scan backend image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build backend image
+        run: docker build -f docker/Dockerfile.backend -t fullstack-template-backend:latest .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: fullstack-template-backend:latest
+          format: sarif
+          output: trivy-backend-results.sarif
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3
+        if: always()
+        with:
+          sarif_file: trivy-backend-results.sarif
+
+  scan-frontend:
+    name: Scan frontend image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build frontend image
+        run: docker build -f docker/Dockerfile.frontend -t fullstack-template-frontend:latest .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: fullstack-template-frontend:latest
+          format: sarif
+          output: trivy-frontend-results.sarif
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3
+        if: always()
+        with:
+          sarif_file: trivy-frontend-results.sarif

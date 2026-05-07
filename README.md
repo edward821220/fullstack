@@ -2,22 +2,36 @@
 
 Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum + tonic). Frontend: TypeScript (Next.js + Tailwind).
 
-> **Status**: Authenticated skeleton with OIDC + MSSQL/Postgres support. RBAC enforced on user endpoints. OTLP and production hardening are planned but not yet implemented.
+> **Status**: Template candidate with OIDC, REST, gRPC, Prometheus metrics, OTLP export, and a reusable protected frontend slice.
+
+## Who This Is For
+
+This README is the human developer entry point. Keep it focused on setup, local operation, important endpoints, and commands developers need on day one.
+
+For implementation rules, architecture conventions, code style, quality gates, and documentation-update discipline, use [AGENTS.md](./AGENTS.md).
+
+## Documentation Map
+
+| File | Audience | Purpose |
+|------|----------|---------|
+| [README.md](./README.md) | Developers | Local setup, run commands, endpoints, configuration entry points |
+| [AGENTS.md](./AGENTS.md) | AI agents | Architecture rules, coding conventions, quality gates, doc-update rules |
+| [CONTEXT.md](./CONTEXT.md) | AI agents + developers | Domain vocabulary, seam names, architectural language |
+| [docs/how-to-add-feature.md](./docs/how-to-add-feature.md) | AI agents + developers | Step-by-step vertical-slice feature workflow |
+| `docs/adr/` | AI agents + developers | Accepted architectural decisions and trade-offs |
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Backend API | Rust, Axum |
-| Backend gRPC | Rust, tonic (experimental — placeholder endpoints) |
+| Backend gRPC | Rust, tonic |
 | Database (default) | MS SQL Server |
 | Database (alternative) | PostgreSQL (sqlx) |
-| Migrations | refinery (MS SQL + PostgreSQL) |
-| Error Handling | SNAFU |
-| Observability | tracing (OTLP planned) |
-| Auth | Generic OIDC (Dex, Keycloak, Azure AD, Google, Bank SSO) |
-| Authorization | Hierarchical RBAC enforced on user endpoints (Admin > Manager > User). Admin: create/delete; Manager+: list/get/update. Auth-disabled mode passes through. Fine-grained ACLs should be added per project. |
-| Frontend | TypeScript, Next.js (App Router) — minimal authenticated shell |
+| Migrations | refinery |
+| Auth | Generic OIDC (Dex, Keycloak, Azure AD, Bank SSO) |
+| Authorization | Hierarchical RBAC (Admin > Manager > User) |
+| Frontend | TypeScript, Next.js (App Router) |
 | Styling | Tailwind CSS v4, shadcn/ui |
 | Validation | Zod |
 | State | Zustand + SWR |
@@ -28,50 +42,82 @@ Fullstack monorepo template for banking-adjacent services. Backend: Rust (Axum +
 Install [mise](https://mise.jdx.dev), then:
 
 ```bash
-mise install   # Rust 1.90, Node 24, pnpm 10
+mise install   # Rust, Node, pnpm, lefthook, typos, committed
+mise trust
+lefthook install
+```
+
+Install frontend dependencies once:
+
+```bash
+pnpm -C frontend install
 ```
 
 ## Quick Start
 
-### 1. Start Database
+`docker-compose.yml` is for local development only.
+
+### 1. Create Local Config
 
 ```bash
-# MS SQL Server (requires --profile mssql)
-docker compose --profile mssql up -d
-
-# Or PostgreSQL (default, no profile needed)
-docker compose up -d
-```
-
-### 2. Run Backend & Frontend Locally
-
-```bash
-# Backend (http://localhost:3001, gRPC :50051)
-mise run dev-backend
-
-# Frontend — first run needs pnpm install
-cd frontend && pnpm install && mise run dev-frontend
-```
-
-### 3. (Optional) Full Stack with Dex OIDC
-
-```bash
-docker compose --profile full up -d
-# Dex is pre-configured with test users (admin/manager/user)
-```
-
-### 4. Frontend Environment
-
-```bash
+cp backend/config/local.example.yaml backend/config/local.yaml
 cp frontend/.env.example frontend/.env.local
-# Edit .env.local with your OIDC provider settings
+```
+
+### 2. Start Database
+
+```bash
+# MS SQL Server (default)
+docker compose --profile mssql-dex up -d
+
+# Or PostgreSQL
+docker compose --profile postgres-dex up -d
+```
+
+### 3. Run Backend & Frontend
+
+```bash
+# Backend (`server` binary; REST on http://localhost:3001)
+mise run dev:be
+
+# Frontend
+mise run dev:fe
+```
+
+`mise run dev:be` starts the combined `server` binary. REST is always served; gRPC is only exposed when `grpc.enabled: true` in `backend/config/local.yaml`.
+
+### 4. (Optional) Enable Auth
+
+Local dev defaults to `auth.enabled: false`. To enable:
+
+```bash
+# Edit backend/config/local.yaml: set auth.enabled: true
+# Dex is already included in mssql-dex and postgres-dex profiles
+# Frontend .env.local is already pre-configured for Dex
 ```
 
 ### 5. Run Checks
 
 ```bash
 mise run check
+# Or separately:
+# mise run check:be
+# mise run check:fe
 ```
+
+`pre-commit` runs a lighter `lefthook` gate: formatter, linter, and spell check only. Full compile/build/test verification stays in CI and in the final local check above.
+
+## Common Commands
+
+| Command | Purpose |
+|---------|---------|
+| `mise run dev:be` | Run backend server |
+| `mise run dev:fe` | Run frontend dev server |
+| `mise run check` | Run full backend + frontend verification |
+| `mise run check:be` | Run backend format, lint, check, tests |
+| `mise run check:fe` | Run frontend format, lint, typecheck, build, tests |
+| `mise run openapi:gen` | Regenerate OpenAPI JSON, TypeScript types, and Zod schemas |
+| `cargo run --bin grpc-server` | Run the standalone gRPC server from `backend/` |
 
 ## Endpoints
 
@@ -79,68 +125,61 @@ mise run check
 |-----|-------------|
 | `http://localhost:3000` | Frontend |
 | `http://localhost:3001/api/v1/users` | REST API |
-| `http://localhost:3001/docs` | API docs (Scalar) |
+| `http://localhost:3001/docs` | API docs (Scalar, only when `server.docs_enabled: true`) |
 | `http://localhost:3001/health` | Liveness |
 | `http://localhost:3001/health/ready` | Readiness (DB check) |
-| `grpc://localhost:50051` | gRPC |
+| `http://localhost:3001/metrics` | Prometheus metrics (only when `observability.metrics_enabled: true`) |
+| `grpc://localhost:50051` | gRPC (only when `grpc.enabled: true` or when running `grpc-server`) |
 
 ## Configuration
 
-### Backend (`backend/config/default.yaml`)
-
-Override via `config/local.yaml` (gitignored) or `APP_*` env vars:
+Backend config lives in `backend/config/default.yaml` (production-safe defaults). Override via `backend/config/local.yaml` (gitignored) or `APP_*` env vars:
 
 ```bash
 APP_SERVER__PORT=3002
-APP_DATABASE__DATABASE_URL="postgres://user:pass@localhost:5432/db"
+APP_SERVER__ENVIRONMENT=production
+APP_OBSERVABILITY__OTLP__ENABLED=true
 ```
 
-Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres` and updating `database.database_url` to a `postgres://` connection string.
+`server.environment` (`local` | `development` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
 
-### Auth Setup
+Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
 
-Enable auth: set `auth.enabled: true` in `backend/config/default.yaml` (disabled by default for local development).
+gRPC is disabled by default in both `backend/config/default.yaml` and `backend/config/local.example.yaml`. Enable it by setting `grpc.enabled: true` in your local `backend/config/local.yaml`, or run the standalone gRPC binary from `backend/` with `cargo run --bin grpc-server`.
 
-#### Local OIDC with Dex
+Frontend local environment lives in `frontend/.env.local`, copied from `frontend/.env.example`.
 
-1. Start the full stack: `docker compose --profile oidc up -d`
-2. Copy `frontend/.env.example` to `frontend/.env.local` (pre-configured for Dex)
-3. Enable auth in backend config: `APP_AUTH__ENABLED=true`
-4. Test users: `admin`/`Admin123!`, `manager`/`Manager123!`, `user`/`User123!`
+### Auth
 
-Dex config and client credentials are pre-defined in `docker/dex/config.yaml`. No manual setup needed.
+Auth is **enabled by default** in production config. For local development, `local.example.yaml` disables it.
 
-OIDC provider via frontend env vars (see `frontend/.env.example`):
+To connect a real IdP, set these in `frontend/.env.local`:
 
 | Variable | Description |
 |----------|-------------|
+| `ENVIRONMENT` | `local` / `development` / `staging` / `production` — controls CSP and auth validation strictness |
 | `AUTH_OIDC_ID` | OIDC client ID |
 | `AUTH_OIDC_SECRET` | OIDC client secret |
 | `AUTH_OIDC_ISSUER` | OIDC issuer URL |
-| `NEXTAUTH_URL` | Public frontend URL |
 | `NEXTAUTH_SECRET` | JWT encryption secret (`openssl rand -hex 32`) |
 
-For bank on-prem IdPs with self-signed certificates:
-```yaml
-# backend/config/default.yaml
-auth:
-  discovery_mode: "manual"
-  manual_endpoints:
-    jwks_uri: "https://idp.bank.com/keys"
-    issuer: "https://idp.bank.com"
-  danger_accept_invalid_certs: true
-```
+For bank on-prem IdPs with private-CA certificates, mount the CA bundle and use `SSL_CERT_FILE`. Do **not** disable TLS verification in production.
 
-## Architecture
+## Development Workflow
 
-See [AGENTS.md](./AGENTS.md) for detailed architecture and development conventions.
+Most implementation work is expected to be delegated to AI agents. Developers should:
+
+- **Start from README**: use this file to set up and run the project.
+- **Send coding tasks to agents**: agents must follow [AGENTS.md](./AGENTS.md).
+- **Use the feature guide**: new domain features should follow [docs/how-to-add-feature.md](./docs/how-to-add-feature.md).
+- **Regenerate generated API artifacts**: run `mise run openapi:gen` after backend DTO or `utoipa` route changes.
+- **Run the full gate**: run `mise run check` before handing work off or merging.
 
 ## Scope & Limitations
 
 This template provides an authenticated skeleton. The following areas are intentionally minimal:
 
-- **Frontend**: Minimal authenticated shell (login → dashboard → sign out). Business UI patterns (loading/empty/error states, data tables, forms) should be added per project.
-- **gRPC**: Placeholder `SayHello`/`HealthCheck` endpoints. Demonstrates tonic integration pattern but not a production service.
+- **Frontend**: One complete protected dashboard slice is included, but domain-specific forms, workflows, and authorization-aware navigation should still be added per project.
+- **gRPC**: `health.v1.HealthService` is included for k8s probes. Project-specific protobuf contracts should be added per service.
 - **Authorization**: Hierarchical role-based guard (Admin > Manager > User) is provided. Fine-grained permissions, resource-level ACLs, or ABAC should be implemented per project.
-- **OIDC**: Backend supports both discovery and manual endpoint modes (for enterprise IdPs with self-signed certs). Frontend uses standard OIDC discovery only — for non-standard IdPs, customize `frontend/src/lib/auth/config.ts`.
-- **Observability**: Tracing with request IDs is wired. OTLP export is planned but not implemented.
+- **Observability**: Prometheus metrics and OTLP trace export are wired, but collector topology, dashboards, alerts, and retention remain project-level work.

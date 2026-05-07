@@ -2,6 +2,7 @@
 name = "repo"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 config = { path = "../config" }
@@ -17,6 +18,10 @@ snafu.workspace = true
 uuid.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["net"] }
+
+[features]
+default = []
+test-helpers = []
 
 [dev-dependencies]
 testcontainers.workspace = true

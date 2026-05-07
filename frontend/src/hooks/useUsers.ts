@@ -1,12 +1,14 @@
 import useSWR from "swr";
-import apiClient from "@/lib/api/client";
-import type { PaginatedUsersResponse } from "@/lib/api/types";
+import { getUsersPage } from "@/lib/api/users/client";
+import type { PaginatedUserResponse } from "@/lib/api/gen/types.gen";
 
-const fetcher = async (url: string) => {
-  const res = await apiClient.get<PaginatedUsersResponse>(url);
-  return res.data;
-};
-
-export function useUsers(page = 1, perPage = 20) {
-  return useSWR<PaginatedUsersResponse>(`/users?page=${page}&per_page=${perPage}`, fetcher);
+export function useUsers(page = 1, perPage = 20, fallbackData?: PaginatedUserResponse) {
+  return useSWR<PaginatedUserResponse>(
+    `/users?page=${page}&per_page=${perPage}`,
+    () => getUsersPage(page, perPage),
+    {
+      fallbackData,
+      keepPreviousData: true,
+    },
+  );
 }

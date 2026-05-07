@@ -13,7 +13,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "openapi:gen": "openapi-typescript ../backend/openapi.json -o src/lib/api/schema.d.ts"
+    "openapi:gen": "openapi-ts"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.10": "8.5.12"
+    }
   },
   "dependencies": {
     "axios": "^1.16.0",
@@ -28,6 +33,7 @@
   "devDependencies": {
     "@eslint-react/eslint-plugin": "^5.7.1",
     "@eslint/js": "^10.0.1",
+    "@hey-api/openapi-ts": "0.97.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -42,9 +48,8 @@
     "eslint-config-next": "^16.2.4",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "jsdom": "^29.1.1",
-    "openapi-typescript": "^7.10.1",
-    "postcss": "^8.5.13",
+    "jsdom": "^29.1.0",
+    "postcss": "^8.5.12",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",

@@ -1,31 +1,38 @@
 name: Frontend CI
 on:
-  push:
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
+      - "docs/openapi.json"
+      - "mise.toml"
       - ".github/workflows/frontend.yml"
+
+env:
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
 jobs:
   check:
-    name: Lint, Format, Typecheck & Test
+    name: Full frontend check
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          node-version: "24"
-          cache: "pnpm"
+          cache: true
       - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm build
-      - run: pnpm test
+        working-directory: frontend
+      - run: mise run check:fe
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Run pnpm audit
+        run: pnpm audit --audit-level moderate
+        working-directory: frontend

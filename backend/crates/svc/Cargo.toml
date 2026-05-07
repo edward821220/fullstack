@@ -2,6 +2,7 @@
 name = "svc"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 repo = { path = "../repo" }
@@ -11,4 +12,10 @@ config = { path = "../config" }
 async-trait.workspace = true
 snafu.workspace = true
 tracing.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 uuid.workspace = true
+
+[dev-dependencies]
+repo = { path = "../repo", features = ["test-helpers"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+time.workspace = true
