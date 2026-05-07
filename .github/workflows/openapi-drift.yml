@@ -30,7 +30,7 @@ jobs:
 
       - name: Generate OpenAPI spec from backend
         run: |
-          cargo run -p server -- gen-openapi > /tmp/openapi.json
+          CARGO_TERM_COLOR=never cargo run -p server -- gen-openapi > /tmp/openapi.json
         working-directory: backend
 
       - name: Check OpenAPI spec is up-to-date
