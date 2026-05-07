@@ -86,8 +86,13 @@ project-root/
 │   ├── adr/                  # Architecture Decision Records
 │   └── openapi.json          # Generated OpenAPI spec (source of truth for FE types)
 ├── proto/                    # gRPC protobuf definitions (language-agnostic)
-├── docker/                   # Dockerfiles
-└── docker-compose.yml        # Local dev environment
+├── docker/                   # Production Dockerfiles
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   └── dev/                 # Local dev only (excluded from prod builds)
+│       ├── docker-compose.yml
+│       └── dex/
+├── docker-bake.hcl           # Multi-platform buildx config (CI + local)
 ```
 
 ---
@@ -111,6 +116,15 @@ project-root/
 - **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit` and are constructed via `infra::create_audit_exporter()` so both REST and gRPC binaries share the same factory logic. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields.
 - **Optimistic Locking**: `users` table has a `version` column. `UPDATE` increments `version` and checks `WHERE id = ? AND version = ?`, returning `409 CONFLICT` on stale data.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
+
+### Docker Build
+
+- **Build tool**: `docker buildx bake` (reads `docker-bake.hcl`). Do not use ad-hoc `docker build` CLI flags.
+- **Multi-platform**: Default targets are `linux/amd64,linux/arm64`. Override with `--set *.platforms=linux/amd64` for local smoke tests.
+- **Registry variables**: `GCP_PROJECT_ID`, `AR_REGION`, `AR_REPO`, `TAG` — set via env vars or `--set`. Image tag pattern: `${AR_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/{backend,frontend}:${TAG}`.
+- **CI workflow**: `.github/workflows/docker-push.yml` uses Workload Identity Federation (no service account keys). Requires GitHub repo variables: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `AR_REGION`, `AR_REPO`.
+- **Local dev compose**: `docker/dev/docker-compose.yml` (mssql/postgres + dex). Not included in production build context (see `.dockerignore`).
+- **Container scanning**: `.github/workflows/container-scan.yml` uses `docker buildx bake --load` with `linux/amd64` only (same packages across arch).
 
 ### Frontend
 

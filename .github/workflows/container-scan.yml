@@ -18,13 +18,22 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build backend image
-        run: docker build -f docker/Dockerfile.backend -t fullstack-template-backend:latest .
+        run: docker buildx bake --set *.platforms=linux/amd64 --load backend
+        env:
+          GCP_PROJECT_ID: scan-local
+          AR_REGION: us
+          AR_REPO: fullstack-template
+          TAG: latest
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: fullstack-template-backend:latest
+          image-ref: us-docker.pkg.dev/scan-local/fullstack-template/backend:latest
           format: sarif
           output: trivy-backend-results.sarif
           exit-code: 1
@@ -43,13 +52,22 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build frontend image
-        run: docker build -f docker/Dockerfile.frontend -t fullstack-template-frontend:latest .
+        run: docker buildx bake --set *.platforms=linux/amd64 --load frontend
+        env:
+          GCP_PROJECT_ID: scan-local
+          AR_REGION: us
+          AR_REPO: fullstack-template
+          TAG: latest
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: fullstack-template-frontend:latest
+          image-ref: us-docker.pkg.dev/scan-local/fullstack-template/frontend:latest
           format: sarif
           output: trivy-frontend-results.sarif
           exit-code: 1

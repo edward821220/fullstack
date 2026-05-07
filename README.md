@@ -55,7 +55,7 @@ pnpm -C frontend install
 
 ## Quick Start
 
-`docker-compose.yml` is for local development only.
+`docker/dev/docker-compose.yml` is for local development only.
 
 ### 1. Create Local Config
 
@@ -68,10 +68,10 @@ cp frontend/.env.example frontend/.env.local
 
 ```bash
 # MS SQL Server (default)
-docker compose --profile mssql-dex up -d
+docker compose -f docker/dev/docker-compose.yml --profile mssql-dex up -d
 
 # Or PostgreSQL
-docker compose --profile postgres-dex up -d
+docker compose -f docker/dev/docker-compose.yml --profile postgres-dex up -d
 ```
 
 ### 3. Run Backend & Frontend
@@ -118,6 +118,9 @@ mise run check
 | `mise run check:fe` | Run frontend format, lint, typecheck, build, tests |
 | `mise run openapi:gen` | Regenerate OpenAPI JSON, TypeScript types, and Zod schemas |
 | `cargo run --bin grpc-server` | Run the standalone gRPC server from `backend/` |
+| `docker buildx bake --print` | Preview Docker build configuration |
+| `docker buildx bake --load --set *.platforms=linux/amd64 backend` | Build backend image locally |
+| `docker buildx bake --load --set *.platforms=linux/amd64 frontend` | Build frontend image locally |
 
 ## Endpoints
 
@@ -164,6 +167,24 @@ To connect a real IdP, set these in `frontend/.env.local`:
 | `NEXTAUTH_SECRET` | JWT encryption secret (`openssl rand -hex 32`) |
 
 For bank on-prem IdPs with private-CA certificates, mount the CA bundle and use `SSL_CERT_FILE`. Do **not** disable TLS verification in production.
+
+## Docker Build
+
+Multi-platform images are defined in `docker-bake.hcl`. CI builds `linux/amd64,linux/arm64` and pushes to GCP Artifact Registry.
+
+```bash
+# Verify configuration
+docker buildx bake --print
+
+# Local smoke test (single platform, no push)
+docker buildx bake --load --set *.platforms=linux/amd64 backend
+docker buildx bake --load --set *.platforms=linux/amd64 frontend
+
+# CI: build + push (requires env vars: GCP_PROJECT_ID, AR_REGION, AR_REPO, TAG)
+docker buildx bake --push
+```
+
+See [AGENTS.md](./AGENTS.md) for Docker build conventions, registry variable details, and CI prerequisites.
 
 ## Development Workflow
 

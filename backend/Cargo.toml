@@ -123,3 +123,4 @@ testcontainers-modules = { version = "0.15", features = [
   "postgres",
   "mssql_server",
 ] }
+subtle = "2"

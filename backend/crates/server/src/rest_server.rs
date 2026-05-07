@@ -193,8 +193,21 @@ pub async fn serve_rest(
                         .get(axum::http::header::AUTHORIZATION)
                         .and_then(|v| v.to_str().ok());
                     match auth_header {
-                        Some(header) if header == format!("Bearer {token}") => {
-                            metrics_handle.render().into_response()
+                        Some(header) => {
+                            let expected = format!("Bearer {}", token);
+                            let is_equal = subtle::ConstantTimeEq::ct_eq(
+                                header.as_bytes(),
+                                expected.as_bytes(),
+                            );
+                            if is_equal.into() {
+                                metrics_handle.render().into_response()
+                            } else {
+                                (
+                                    axum::http::StatusCode::UNAUTHORIZED,
+                                    "Unauthorized".to_owned(),
+                                )
+                                    .into_response()
+                            }
                         }
                         _ => (
                             axum::http::StatusCode::UNAUTHORIZED,

@@ -38,8 +38,12 @@ export async function get<T>(
   });
 
   if (!response.ok) {
+    // Do not include response body in thrown error to avoid leaking backend internals.
     const body = await response.text();
-    throw new Error(`Server GET ${endpoint} failed (${response.status}): ${body}`);
+    console.error(`Server GET ${endpoint} failed (${response.status})`, {
+      body: body.slice(0, 500),
+    });
+    throw new Error(`Server GET ${endpoint} failed (${response.status})`);
   }
 
   return parse(await response.json(), schema);
@@ -65,7 +69,10 @@ export async function post<T>(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Server POST ${endpoint} failed (${response.status}): ${errorBody}`);
+    console.error(`Server POST ${endpoint} failed (${response.status})`, {
+      body: errorBody.slice(0, 500),
+    });
+    throw new Error(`Server POST ${endpoint} failed (${response.status})`);
   }
 
   return parse(await response.json(), schema);
@@ -91,7 +98,10 @@ export async function put<T>(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Server PUT ${endpoint} failed (${response.status}): ${errorBody}`);
+    console.error(`Server PUT ${endpoint} failed (${response.status})`, {
+      body: errorBody.slice(0, 500),
+    });
+    throw new Error(`Server PUT ${endpoint} failed (${response.status})`);
   }
 
   return parse(await response.json(), schema);

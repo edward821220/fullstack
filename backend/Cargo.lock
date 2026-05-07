@@ -4078,6 +4078,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "sqlx",
+ "subtle",
  "svc",
  "time",
  "tokio",
