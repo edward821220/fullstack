@@ -81,4 +81,4 @@ url = "2"
 
 # Dev-only: integration tests
 testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres", "mssql_server"] }
+testcontainers-modules = { version = "0.12", features = ["postgres", "mssql_server"] }
