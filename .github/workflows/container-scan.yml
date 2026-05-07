@@ -23,17 +23,23 @@ jobs:
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Build backend image
-        run: docker buildx bake --set *.platforms=linux/amd64 --load backend
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6
+        with:
+          targets: backend
+          load: true
+          set: |
+            *.platforms=linux/amd64
+            backend.tags=fullstack-template-backend:scan
         env:
           GCP_PROJECT_ID: scan-local
           AR_REGION: us
           AR_REPO: fullstack-template
-          TAG: latest
+          TAG: scan
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: us-docker.pkg.dev/scan-local/fullstack-template/backend:latest
+          image-ref: fullstack-template-backend:scan
           format: sarif
           output: trivy-backend-results.sarif
           exit-code: 1
@@ -54,20 +60,26 @@ jobs:
 
       - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8d9deedd # v4.0.0
 
       - name: Build frontend image
-        run: docker buildx bake --set *.platforms=linux/amd64 --load frontend
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6
+        with:
+          targets: frontend
+          load: true
+          set: |
+            *.platforms=linux/amd64
+            frontend.tags=fullstack-template-frontend:scan
         env:
           GCP_PROJECT_ID: scan-local
           AR_REGION: us
           AR_REPO: fullstack-template
-          TAG: latest
+          TAG: scan
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: us-docker.pkg.dev/scan-local/fullstack-template/frontend:latest
+          image-ref: fullstack-template-frontend:scan
           format: sarif
           output: trivy-frontend-results.sarif
           exit-code: 1
