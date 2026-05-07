@@ -38,11 +38,13 @@ jobs:
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Build & push images
-        run: |
-          REGISTRY=${{ vars.AR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}
-          docker buildx bake --push \
-            --set backend.tags+=${REGISTRY}/backend:latest \
-            --set frontend.tags+=${REGISTRY}/frontend:latest
+        uses: docker/bake-action@a66e1c87e2eca0503c343edf1d208c716d54b8a8 # v7.1.0
+        with:
+          source: .
+          push: true
+          set: |
+            backend.tags+=${{ vars.AR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/backend:latest
+            frontend.tags+=${{ vars.AR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/frontend:latest
         env:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           AR_REGION: ${{ vars.AR_REGION }}
