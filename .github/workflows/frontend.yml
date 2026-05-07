@@ -1,11 +1,5 @@
 name: Frontend CI
 on:
-  push:
-    paths:
-      - "frontend/**"
-      - "docs/openapi.json"
-      - "mise.toml"
-      - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "frontend/**"

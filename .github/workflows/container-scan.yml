@@ -1,12 +1,5 @@
 name: Container security scan
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docker/**"
-      - "backend/**"
-      - "frontend/**"
-      - ".github/workflows/container-scan.yml"
   pull_request:
     paths:
       - "docker/**"
@@ -27,7 +20,7 @@ jobs:
         run: docker build -f docker/Dockerfile.backend -t fullstack-template-backend:latest .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87db08 # 0.30.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: fullstack-template-backend:latest
           format: sarif
@@ -36,7 +29,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@f09c1c0f94f965f25304bac219d5d19d41a5fe6e # v3.28.5
+        uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3
         if: always()
         with:
           sarif_file: trivy-backend-results.sarif
@@ -51,7 +44,7 @@ jobs:
         run: docker build -f docker/Dockerfile.frontend -t fullstack-template-frontend:latest .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87db08 # 0.30.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: fullstack-template-frontend:latest
           format: sarif
@@ -60,7 +53,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@f09c1c0f94f965f25304bac219d5d19d41a5fe6e # v3.28.5
+        uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3
         if: always()
         with:
           sarif_file: trivy-frontend-results.sarif
