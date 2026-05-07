@@ -39,7 +39,7 @@ bb8-tiberius = "0.16"
 bb8 = "0.9"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Database migrations
-refinery = { version = "0.8", features = ["tokio-postgres", "tiberius"] }
+refinery = { version = "0.9", features = ["tokio-postgres", "tiberius"] }
 tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }
 # Config
 figment = { version = "0.10", features = ["yaml", "env", "toml"] }
