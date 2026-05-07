@@ -21,9 +21,9 @@ variable "PLATFORMS" {
 target "backend" {
   context    = "."
   dockerfile = "docker/Dockerfile.backend"
-  platforms  = var.PLATFORMS
+  platforms  = PLATFORMS
   tags = [
-    "${var.AR_REGION}-docker.pkg.dev/${var.GCP_PROJECT_ID}/${var.AR_REPO}/backend:${var.TAG}",
+    "${AR_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/backend:${TAG}",
   ]
   cache-from = ["type=gha,scope=backend"]
   cache-to   = ["type=gha,mode=max,scope=backend"]
@@ -32,9 +32,9 @@ target "backend" {
 target "frontend" {
   context    = "."
   dockerfile = "docker/Dockerfile.frontend"
-  platforms  = var.PLATFORMS
+  platforms  = PLATFORMS
   tags = [
-    "${var.AR_REGION}-docker.pkg.dev/${var.GCP_PROJECT_ID}/${var.AR_REPO}/frontend:${var.TAG}",
+    "${AR_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/frontend:${TAG}",
   ]
   cache-from = ["type=gha,scope=frontend"]
   cache-to   = ["type=gha,mode=max,scope=frontend"]
