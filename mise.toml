@@ -48,9 +48,9 @@ dir = "backend"
 run = "cargo run -p server -- gen-openapi > ../docs/openapi.json"
 
 [tasks."openapi:gen:fe"]
-description = "Generate TypeScript types and Zod schemas from OpenAPI spec"
+description = "Generate TypeScript types and Zod schemas from OpenAPI spec, then format"
 dir = "frontend"
-run = "pnpm openapi:gen"
+run = ["pnpm openapi:gen", "pnpm exec prettier --no-cache --write src/lib/api/gen/"]
 
 [tasks."openapi:gen"]
 description = "Generate OpenAPI spec from backend and convert to TypeScript types"

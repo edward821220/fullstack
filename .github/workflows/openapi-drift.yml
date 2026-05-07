@@ -43,13 +43,15 @@ jobs:
           fi
 
       - name: Generate frontend types from OpenAPI
-        run: pnpm openapi:gen
+        run: |
+          pnpm openapi:gen
+          pnpm exec prettier --no-cache --write src/lib/api/gen/
         working-directory: frontend
 
       - name: Check generated types are up-to-date
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Generated frontend types are out of date. Run 'mise run openapi:gen:fe' and commit the result."
-            git diff --name-only
+          if [ -n "$(git status --porcelain frontend/src/lib/api/gen/)" ]; then
+            echo "::error::Generated frontend types are out of date. Run 'mise run openapi:gen' and commit the result."
+            git diff --name-only frontend/src/lib/api/gen/
             exit 1
           fi

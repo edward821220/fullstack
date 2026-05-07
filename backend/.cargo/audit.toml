@@ -1,0 +1,15 @@
+[advisories]
+ignore = [
+    # Marvin Attack: timing sidechannel in RSA — no patched crate available yet
+    "RUSTSEC-2023-0071",
+    # rustls-pemfile is unmaintained — awaiting ecosystem migration
+    "RUSTSEC-2025-0134",
+    # RUSTSEC-2026-0097: rand 0.7.3 is unsound with a custom logger.
+    # This is pulled in only on Windows via the optional winauth dependency in tiberius.
+    # On non-Windows targets this crate is not compiled, and upstream tiberius has not
+    # published a newer release that removes or upgrades the dependency.
+    "RUSTSEC-2026-0097",
+    # RUSTSEC-2020-0140: `Shared` can cause a data race — applies to the published
+    # `model` crate on crates.io, not our local workspace crate of the same name.
+    "RUSTSEC-2020-0140",
+]
