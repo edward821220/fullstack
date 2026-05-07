@@ -14,6 +14,7 @@ use std::time::Duration;
 use svc::UserService;
 use svc::audit::PiiMode;
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{
@@ -63,6 +64,7 @@ pub async fn serve_rest(
     repo: AnyUserRepo,
     health_checker: Arc<dyn svc::HealthChecker>,
     addr: std::net::SocketAddr,
+    cancel: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let svc = Arc::new(UserService::new(repo));
     let oidc_validator = Arc::new(OidcValidator::new(config.auth.clone()));
@@ -218,18 +220,25 @@ pub async fn serve_rest(
             inner: listener,
             acceptor,
         };
-        axum::serve(tls_listener, app.into_make_service())
-            .with_graceful_shutdown(async {
-                tokio::signal::ctrl_c().await.ok();
-            })
-            .await?;
+        serve_listener(tls_listener, app, cancel).await?;
     } else {
-        axum::serve(listener, app.into_make_service())
-            .with_graceful_shutdown(async {
-                tokio::signal::ctrl_c().await.ok();
-            })
-            .await?;
+        serve_listener(listener, app, cancel).await?;
     }
+    Ok(())
+}
+
+async fn serve_listener<L>(
+    listener: L,
+    app: Router,
+    cancel: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    L: axum::serve::Listener,
+    L::Addr: std::fmt::Debug,
+{
+    axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(cancel.cancelled_owned())
+        .await?;
     Ok(())
 }
 struct TlsListener {

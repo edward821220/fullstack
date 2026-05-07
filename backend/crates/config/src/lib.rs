@@ -112,6 +112,10 @@ impl Environment {
     }
 }
 
+fn default_metrics_interval_seconds() -> u64 {
+    15
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_environment")]
@@ -126,6 +130,8 @@ pub struct ServerConfig {
     pub docs_enabled: bool,
     #[serde(default = "default_max_request_body_size")]
     pub max_request_body_size: usize,
+    #[serde(default = "default_metrics_interval_seconds")]
+    pub metrics_interval_seconds: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -464,6 +470,7 @@ mod tests {
                 cors_origins: vec!["http://localhost:3000".to_owned()],
                 docs_enabled: true,
                 max_request_body_size: 1_048_576,
+                metrics_interval_seconds: 15,
             },
             database: DatabaseConfig {
                 driver: DatabaseDriver::Mssql,

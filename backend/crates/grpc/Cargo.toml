@@ -34,6 +34,7 @@ snafu.workspace = true
 uuid.workspace = true
 reqwest.workspace = true
 jsonwebtoken.workspace = true
+tokio-util.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true

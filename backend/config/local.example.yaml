@@ -20,6 +20,7 @@ server:
   cors_origins:
     - "http://localhost:3000"
   docs_enabled: true
+  metrics_interval_seconds: 15
 
 database:
   host: "localhost"

@@ -5,6 +5,7 @@ use config::AppConfig;
 use repo::AnyUserRepo;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use svc::audit::PiiMode;
+use tokio_util::sync::CancellationToken;
 
 pub mod auth;
 pub mod health;
@@ -15,6 +16,7 @@ pub async fn serve(
     _repo: AnyUserRepo,
     health_checker: Arc<dyn svc::HealthChecker>,
     addr: SocketAddr,
+    cancel: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     infra::ensure_jwt_crypto_provider();
 
@@ -33,9 +35,13 @@ pub async fn serve(
         // Spawn background JWKS refresh.
         let refresh_state = Arc::clone(&state);
         let cache_ttl = Duration::from_secs(config.auth.jwks_cache_duration_secs);
+        let jwks_cancel = cancel.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(cache_ttl).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(cache_ttl) => {}
+                    _ = jwks_cancel.cancelled() => break,
+                }
                 if let Err(e) = refresh_state.refresh_jwks().await {
                     tracing::warn!("gRPC JWKS background refresh failed: {e}");
                 }
@@ -96,10 +102,7 @@ pub async fn serve(
         .add_service(health_svc)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async {
-                tokio::signal::ctrl_c().await.ok();
-                tracing::info!("gRPC server graceful shutdown");
-            },
+            cancel.cancelled_owned(),
         )
         .await?;
 
