@@ -13,6 +13,9 @@ on:
       - "mise.toml"
       - ".github/workflows/frontend.yml"
 
+env:
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
 jobs:
   check:
     name: Full frontend check
@@ -22,6 +25,8 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           cache: true
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
       - run: mise run check:fe
 
   audit:
@@ -32,6 +37,8 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           cache: true
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
       - name: Run pnpm audit
         run: pnpm audit --audit-level moderate
         working-directory: frontend

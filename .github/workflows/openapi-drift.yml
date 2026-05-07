@@ -17,6 +17,9 @@ on:
       - "mise.toml"
       - ".github/workflows/openapi-drift.yml"
 
+env:
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
 jobs:
   check:
     name: Verify OpenAPI spec and generated types are up-to-date
@@ -26,6 +29,10 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           cache: true
+      - name: Add rustfmt and clippy components
+        run: rustup component add --toolchain "$(rustup show active-toolchain | cut -d' ' -f1)" rustfmt clippy
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
 
       - name: Generate OpenAPI spec from backend
         run: |

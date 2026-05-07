@@ -1,9 +1,10 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-unsound = "deny"
+version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    "RUSTSEC-2023-0071", # Marvin Attack: timing sidechannel in RSA — no patched crate available yet
+    "RUSTSEC-2025-0134", # rustls-pemfile is unmaintained — awaiting ecosystem migration
+]
 
 [bans]
 multiple-versions = "deny"
@@ -14,7 +15,9 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 [licenses]
+version = 2
 confidence-threshold = 0.9
+private = { ignore = true }
 allow = [
     "MIT",
     "Apache-2.0",
@@ -24,5 +27,6 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "Zlib",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
 ]
-copyleft = "deny"

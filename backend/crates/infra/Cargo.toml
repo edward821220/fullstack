@@ -2,6 +2,7 @@
 name = "infra"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 config = { path = "../config" }
@@ -23,6 +24,7 @@ opentelemetry_sdk.workspace = true
 uuid.workspace = true
 reqwest.workspace = true
 snafu.workspace = true
+jsonwebtoken.workspace = true
 
 [dev-dependencies]
 axum.workspace = true

@@ -1,7 +1,7 @@
 [tools]
 rust = "1.90.0"
 node = "24"
-pnpm = "10"
+"github:pnpm/pnpm" = "10"
 lefthook = "latest"
 "github:crate-ci/typos" = "latest"
 committed = "latest"
