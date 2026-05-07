@@ -1,5 +1,7 @@
 name: OpenAPI drift check
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "backend/**"

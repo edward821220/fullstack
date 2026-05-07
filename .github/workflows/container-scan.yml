@@ -1,5 +1,7 @@
 name: Container security scan
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "docker/**"
