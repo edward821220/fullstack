@@ -170,18 +170,18 @@ For bank on-prem IdPs with private-CA certificates, mount the CA bundle and use 
 
 ## Docker Build
 
-Multi-platform images are defined in `docker-bake.hcl`. CI builds `linux/amd64,linux/arm64` and pushes to GCP Artifact Registry.
+Multi-platform images are defined in `docker/docker-bake.hcl`. CI builds `linux/amd64,linux/arm64` and pushes to GCP Artifact Registry.
 
 ```bash
 # Verify configuration
-docker buildx bake --print
+docker buildx bake -f docker/docker-bake.hcl --print
 
 # Local smoke test (single platform, no push)
-docker buildx bake --load --set *.platforms=linux/amd64 backend
-docker buildx bake --load --set *.platforms=linux/amd64 frontend
+docker buildx bake -f docker/docker-bake.hcl --load --set *.platforms=linux/amd64 backend
+docker buildx bake -f docker/docker-bake.hcl --load --set *.platforms=linux/amd64 frontend
 
 # CI: build + push (requires env vars: GCP_PROJECT_ID, AR_REGION, AR_REPO, TAG)
-docker buildx bake --push
+docker buildx bake -f docker/docker-bake.hcl --push
 ```
 
 See [AGENTS.md](./AGENTS.md) for Docker build conventions, registry variable details, and CI prerequisites.

@@ -92,7 +92,8 @@ project-root/
 │   └── dev/                 # Local dev only (excluded from prod builds)
 │       ├── docker-compose.yml
 │       └── dex/
-├── docker-bake.hcl           # Multi-platform buildx config (CI + local)
+├── docker/
+│   ├── docker-bake.hcl       # Multi-platform buildx config (CI + local)
 ```
 
 ---
@@ -119,7 +120,7 @@ project-root/
 
 ### Docker Build
 
-- **Build tool**: `docker buildx bake` (reads `docker-bake.hcl`). Do not use ad-hoc `docker build` CLI flags. Use `docker/bake-action` in CI workflows.
+- **Build tool**: `docker buildx bake -f docker/docker-bake.hcl` (reads `docker/docker-bake.hcl`). Do not use ad-hoc `docker build` CLI flags. Use `docker/bake-action` in CI workflows.
 - **Multi-platform**: Default targets are `linux/amd64,linux/arm64`. Override with `--set *.platforms=linux/amd64` for local smoke tests.
 - **Image tags**: CI pushes both `${SHA}` and `latest` tags. `latest` tag is added via `--set backend.tags+=` / `--set frontend.tags+=` in the push workflow. The HCL default `TAG` is only used for local builds.
 - **Registry auth**: CI uses `google-github-actions/auth` with `token_format: access_token` + `docker/login-action` (no gcloud CLI install needed). Username = `oauth2accesstoken`, password = the access token.
