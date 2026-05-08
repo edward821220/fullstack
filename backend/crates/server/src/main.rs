@@ -14,7 +14,7 @@ struct Cli {
     command: Option<Command>,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Command {
     /// Print the OpenAPI specification as JSON to stdout
     GenOpenapi,

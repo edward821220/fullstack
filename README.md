@@ -154,7 +154,7 @@ server --config-dir /etc/app/config
 APP_CONFIG_DIR=/etc/app/config server
 ```
 
-`server.environment` (`local` | `development` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
+`server.environment` (`local` | `sandbox` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
 
@@ -170,7 +170,7 @@ To connect a real IdP, set these in `frontend/.env.local`:
 
 | Variable | Description |
 |----------|-------------|
-| `ENVIRONMENT` | `local` / `development` / `staging` / `production` — controls CSP and auth validation strictness |
+| `ENVIRONMENT` | `local` / `sandbox` / `staging` / `production` — controls CSP and auth validation strictness |
 | `AUTH_OIDC_ID` | OIDC client ID |
 | `AUTH_OIDC_SECRET` | OIDC client secret |
 | `AUTH_OIDC_ISSUER` | OIDC issuer URL |

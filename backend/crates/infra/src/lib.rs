@@ -8,17 +8,19 @@ use std::sync::{Arc, Once};
 
 use audit::{NoopExporter, OtelLogsExporter, SyslogExporter};
 
-static JWT_CRYPTO_PROVIDER_INIT: Once = Once::new();
+static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
-/// Install the jsonwebtoken crypto provider once per process before any JWT
-/// verification occurs.
+/// Install crypto providers once per process:
+/// 1. jsonwebtoken crypto provider for JWT verification.
+/// 2. rustls ring crypto provider for tonic (gRPC) TLS and other rustls usage.
 pub fn ensure_jwt_crypto_provider() {
-    JWT_CRYPTO_PROVIDER_INIT.call_once(|| {
+    CRYPTO_PROVIDER_INIT.call_once(|| {
         let result = jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER.install_default();
         debug_assert!(
             result.is_ok(),
             "jsonwebtoken crypto provider install should happen once"
         );
+        let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     });
 }
 

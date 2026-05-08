@@ -43,8 +43,12 @@ impl From<StartupError> for BootstrapError {
 }
 
 pub fn load_and_validate_config(config_dir: Option<PathBuf>) -> Result<AppConfig, BootstrapError> {
-    let config = AppConfig::load_with_config_dir(config_dir.unwrap_or_default())
-        .map_err(|e| BootstrapError::Config(format!("Failed to load configuration: {e}")))?;
+    let config = if let Some(dir) = config_dir {
+        AppConfig::load_with_config_dir(dir)
+    } else {
+        AppConfig::load()
+    }
+    .map_err(|e| BootstrapError::Config(format!("Failed to load configuration: {e}")))?;
     config
         .validate()
         .map_err(|e| BootstrapError::Config(format!("Config validation failed: {e}")))?;

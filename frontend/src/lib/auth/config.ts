@@ -5,9 +5,9 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 function validateAuthConfig() {
   const env = process.env.ENVIRONMENT ?? "production";
-  const isLax = env === "local" || env === "test" || env === "development";
+  const isLax = env === "local" || env === "test" || env === "sandbox";
   if (isLax) {
-    // Local/test/development: skip strict validation to preserve dev experience.
+    // Local/test/sandbox: skip strict validation to preserve dev experience.
     // Staging and production must enforce fail-closed validation.
     return;
   }

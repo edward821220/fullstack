@@ -1,3 +1,5 @@
+name: fullstack-template
+
 services:
   # ── MS SQL Server (default) ────────────────────────────────────────────
   mssql:

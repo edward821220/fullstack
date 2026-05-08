@@ -16,7 +16,9 @@ use svc::audit::PiiMode;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
+use tower_governor::{
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+};
 use tower_http::{
     cors::CorsLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -121,6 +123,7 @@ pub async fn serve_rest(
     let api_routes = if config.rate_limit.enabled {
         let governor_conf = Arc::new(
             GovernorConfigBuilder::default()
+                .key_extractor(GlobalKeyExtractor)
                 .per_second(config.rate_limit.requests_per_second.into())
                 .burst_size(config.rate_limit.burst_size)
                 .finish()

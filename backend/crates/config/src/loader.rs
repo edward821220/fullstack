@@ -65,12 +65,47 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// Helper to temporarily set an env var and restore it after the closure runs.
+    /// This avoids cross-test pollution from parallel test threads.
+    fn with_env<F, R>(key: &str, value: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let orig = std::env::var_os(key);
+        // SAFETY: single-threaded test helper; env mutation is scoped and restored.
+        unsafe { std::env::set_var(key, value) };
+        let result = f();
+        match orig {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+        result
+    }
+
+    /// Helper to temporarily remove an env var and restore it after the closure runs.
+    fn without_env<F, R>(key: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let orig = std::env::var_os(key);
+        // SAFETY: single-threaded test helper; env mutation is scoped and restored.
+        unsafe { std::env::remove_var(key) };
+        let result = f();
+        match orig {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+        result
+    }
+
     #[test]
     fn config_dir_resolve_defaults_to_config() {
-        let dir = ConfigDir::resolve(None);
-        assert_eq!(dir.dir, PathBuf::from("config"));
-        assert_eq!(dir.default_yaml(), PathBuf::from("config/default.yaml"));
-        assert_eq!(dir.local_yaml(), PathBuf::from("config/local.yaml"));
+        without_env(CONFIG_DIR_ENV, || {
+            let dir = ConfigDir::resolve(None);
+            assert_eq!(dir.dir, PathBuf::from("config"));
+            assert_eq!(dir.default_yaml(), PathBuf::from("config/default.yaml"));
+            assert_eq!(dir.local_yaml(), PathBuf::from("config/local.yaml"));
+        });
     }
 
     #[test]
@@ -82,22 +117,18 @@ mod tests {
     }
 
     #[test]
-    fn config_dir_resolve_prefers_cli_over_env() {
-        // SAFETY: single-threaded test; env mutation is scoped and restored.
-        let orig = std::env::var_os(CONFIG_DIR_ENV);
-        unsafe { std::env::set_var(CONFIG_DIR_ENV, "/from/env") };
+    fn config_dir_resolve_env_fallback_when_no_cli() {
+        with_env(CONFIG_DIR_ENV, "/opt/config", || {
+            let dir = ConfigDir::resolve(None);
+            assert_eq!(dir.dir, PathBuf::from("/opt/config"));
+        });
+    }
 
-        // CLI arg wins over env
-        let from_cli = ConfigDir::resolve(Some(PathBuf::from("/from/cli")));
-        assert_eq!(from_cli.dir, PathBuf::from("/from/cli"));
-
-        // Env fallback when no CLI arg
-        let from_env = ConfigDir::resolve(None);
-        assert_eq!(from_env.dir, PathBuf::from("/from/env"));
-
-        match orig {
-            Some(v) => unsafe { std::env::set_var(CONFIG_DIR_ENV, v) },
-            None => unsafe { std::env::remove_var(CONFIG_DIR_ENV) },
-        }
+    #[test]
+    fn config_dir_resolve_cli_takes_precedence_over_env() {
+        with_env(CONFIG_DIR_ENV, "/from/env", || {
+            let dir = ConfigDir::resolve(Some(PathBuf::from("/from/cli")));
+            assert_eq!(dir.dir, PathBuf::from("/from/cli"));
+        });
     }
 }
