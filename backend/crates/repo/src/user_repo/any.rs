@@ -107,12 +107,17 @@ impl UserRepo for AnyUserRepo {
         }
     }
 
-    async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
+    async fn update(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        version: Option<i64>,
+    ) -> Result<User> {
         match self {
-            AnyUserRepo::Postgres(repo) => repo.update(id, display_name).await,
-            AnyUserRepo::Mssql(repo) => repo.update(id, display_name).await,
+            AnyUserRepo::Postgres(repo) => repo.update(id, display_name, version).await,
+            AnyUserRepo::Mssql(repo) => repo.update(id, display_name, version).await,
             #[cfg(feature = "test-helpers")]
-            AnyUserRepo::Mock(repo) => repo.update(id, display_name).await,
+            AnyUserRepo::Mock(repo) => repo.update(id, display_name, version).await,
         }
     }
 

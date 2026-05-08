@@ -1,13 +1,28 @@
+use clap::Parser;
 use config::AppConfig;
 use grpc::serve;
 use infra::startup::{connect_to_database, shutdown_with_budget, wait_for_shutdown_signal};
 use infra::telemetry::init_tracing;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Parser)]
+#[command(name = "grpc-server")]
+struct Cli {
+    #[arg(long, env = "APP_CONFIG_DIR")]
+    config_dir: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = AppConfig::load()?;
+    let cli = Cli::parse();
+
+    let config = if let Some(dir) = cli.config_dir {
+        AppConfig::load_with_config_dir(dir)?
+    } else {
+        AppConfig::load()?
+    };
     config.validate()?;
 
     let telemetry = init_tracing(&config)?;

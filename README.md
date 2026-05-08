@@ -144,6 +144,16 @@ APP_SERVER__ENVIRONMENT=production
 APP_OBSERVABILITY__OTLP__ENABLED=true
 ```
 
+By default, the server looks for `config/default.yaml` and `config/local.yaml` relative to the working directory. Override the config directory with `--config-dir <path>` or `APP_CONFIG_DIR` env var (CLI flag takes precedence). This is useful for K8s deployments where config is mounted at a different path:
+
+```bash
+# Via CLI flag
+server --config-dir /etc/app/config
+
+# Via environment variable
+APP_CONFIG_DIR=/etc/app/config server
+```
+
 `server.environment` (`local` | `development` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.

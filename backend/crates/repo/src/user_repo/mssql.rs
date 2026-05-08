@@ -181,13 +181,18 @@ impl UserRepo for MssqlUserRepo {
         })
         .and_then(|r| row_to_user(&r))
     }
-    async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
+    async fn update(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        version: Option<i64>,
+    ) -> Result<User> {
         let user = self
             .find_by_id(id)
             .await?
             .ok_or(Error::UserNotFound { id })?;
         let new_name = display_name.unwrap_or(&user.display_name);
-        let expected_version = user.version;
+        let expected_version = version.unwrap_or(user.version);
         let now = time::OffsetDateTime::now_utc();
         let mut client = self.pool.get().await.map_err(|e| Error::Database {
             message: e.to_string(),

@@ -122,7 +122,12 @@ impl UserRepo for MockUserRepo {
         Ok(user)
     }
 
-    async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
+    async fn update(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        _version: Option<i64>,
+    ) -> Result<User> {
         let mut users = self.users.lock().unwrap();
         let user = users
             .iter_mut()

@@ -25,7 +25,12 @@ pub trait UserServiceTrait<R: UserRepo>: Send + Sync {
         role: model::role::Role,
         email_verified: bool,
     ) -> Result<User>;
-    async fn update_user(&self, id: Uuid, display_name: Option<&str>) -> Result<User>;
+    async fn update_user(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        version: Option<i64>,
+    ) -> Result<User>;
     async fn delete_user(&self, id: Uuid) -> Result<()>;
     async fn provision_user(
         &self,
@@ -72,8 +77,13 @@ impl<R: UserRepo> UserServiceTrait<R> for UserService<R> {
             .await?)
     }
     #[instrument(skip(self), fields(user_id = %id))]
-    async fn update_user(&self, id: Uuid, display_name: Option<&str>) -> Result<User> {
-        Ok(self.repo.update(id, display_name).await?)
+    async fn update_user(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        version: Option<i64>,
+    ) -> Result<User> {
+        Ok(self.repo.update(id, display_name, version).await?)
     }
     #[instrument(skip(self), fields(user_id = %id))]
     async fn delete_user(&self, id: Uuid) -> Result<()> {

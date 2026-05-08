@@ -208,7 +208,7 @@ async fn update_user(
     }
     let user = state
         .svc
-        .update_user(id, req.display_name.as_deref())
+        .update_user(id, req.display_name.as_deref(), req.version)
         .await?;
 
     if let Some(Extension(actor)) = actor {

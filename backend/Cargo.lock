@@ -1547,6 +1547,7 @@ dependencies = [
 name = "grpc"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "config",
  "dto",
  "infra",
@@ -2377,6 +2378,7 @@ dependencies = [
 name = "migration"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "config",
  "refinery",
  "rustls-native-certs",

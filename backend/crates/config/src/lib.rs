@@ -4,6 +4,8 @@ use snafu::Snafu;
 pub mod loader;
 pub mod validation;
 
+pub use loader::ConfigDir;
+
 fn default_metrics_enabled() -> bool {
     true
 }

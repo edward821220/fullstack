@@ -4,6 +4,7 @@ use infra::startup::{
     StartupError, connect_to_database, shutdown_with_budget, wait_for_shutdown_signal,
 };
 use infra::telemetry::init_tracing;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -41,8 +42,8 @@ impl From<StartupError> for BootstrapError {
     }
 }
 
-pub fn load_and_validate_config() -> Result<AppConfig, BootstrapError> {
-    let config = AppConfig::load()
+pub fn load_and_validate_config(config_dir: Option<PathBuf>) -> Result<AppConfig, BootstrapError> {
+    let config = AppConfig::load_with_config_dir(config_dir.unwrap_or_default())
         .map_err(|e| BootstrapError::Config(format!("Failed to load configuration: {e}")))?;
     config
         .validate()
