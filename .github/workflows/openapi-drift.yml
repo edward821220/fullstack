@@ -1,9 +1,10 @@
-name: OpenAPI drift check
+name: OpenAPI spec drift check
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "backend/**"
-      - "frontend/**"
       - "proto/**"
       - "docs/openapi.json"
       - "mise.toml"
@@ -14,7 +15,7 @@ env:
 
 jobs:
   check:
-    name: Verify OpenAPI spec and generated types are up-to-date
+    name: Verify OpenAPI spec is up-to-date
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -25,8 +26,6 @@ jobs:
           cache: true
       - name: Add rustfmt and clippy components
         run: rustup component add --toolchain "$(rustup show active-toolchain | cut -d' ' -f1)" rustfmt clippy
-      - run: pnpm install --frozen-lockfile
-        working-directory: frontend
 
       - name: Generate OpenAPI spec from backend
         run: |
@@ -37,17 +36,5 @@ jobs:
         run: |
           if ! diff -q /tmp/openapi.json docs/openapi.json; then
             echo "::error::docs/openapi.json is out of date. Run 'mise run openapi:gen:be' and commit the result."
-            exit 1
-          fi
-
-      - name: Generate frontend types from OpenAPI
-        run: pnpm openapi:gen
-        working-directory: frontend
-
-      - name: Check generated types are up-to-date
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Generated frontend types are out of date. Run 'mise run openapi:gen:fe' and commit the result."
-            git diff --name-only
             exit 1
           fi

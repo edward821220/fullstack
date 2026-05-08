@@ -47,7 +47,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./docker/dex/config.yaml:/etc/dex/config.yaml:ro
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
     profiles:
       - mssql-dex
       - postgres-dex

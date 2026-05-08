@@ -46,9 +46,11 @@ pub mod user;
 pub mod user_identity;
 ```
 
-### 2. DTO (`backend/crates/dto/src/lib.rs`)
+### 2. DTO (`backend/crates/dto/src/<feature>.rs`)
 
-Add request/response types with `serde` and `utoipa::ToSchema`.
+Add request/response types with `serde` and `utoipa::ToSchema` in a dedicated file.
+
+Create `backend/crates/dto/src/order.rs`:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -76,6 +78,15 @@ pub struct PaginatedOrderResponse {
     pub page: u64,
     pub per_page: u64,
 }
+```
+
+Register it in `dto/src/lib.rs`:
+
+```rust
+pub mod order;
+pub mod user;
+pub use order::{CreateOrderRequest, OrderResponse, PaginatedOrderResponse};
+pub use user::{CreateUserRequest, UpdateUserRequest, UserResponse};
 ```
 
 ### 3. Repository (`backend/crates/repo/src/`)
@@ -147,7 +158,7 @@ Create `orders.rs`:
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/orders", get(list_orders).post(create_order))
-        .route("/orders/{id}", get(get_order))
+        .route("/orders/{id}", get(get_order).put(update_order).delete(delete_order))
         .with_state(state)
 }
 ```

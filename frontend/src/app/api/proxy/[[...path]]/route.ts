@@ -3,6 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:3001/api/v1";
 const TRUSTED_ORIGIN = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+const PROXY_TIMEOUT_MS = 30_000;
+
+const ALLOWED_RESPONSE_HEADERS = new Set([
+  "content-type",
+  "content-length",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "x-request-id",
+  "x-total-count",
+  "location",
+]);
 
 function isMutatingMethod(method: string): boolean {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method);
@@ -49,17 +61,32 @@ async function proxy(request: NextRequest, { params }: { params: Promise<{ path?
   const body =
     request.method !== "GET" && request.method !== "HEAD" ? await request.arrayBuffer() : undefined;
 
-  const response = await fetch(url, {
-    method: request.method,
-    headers,
-    body,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
 
-  return new NextResponse(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
+  try {
+    const response = await fetch(url, {
+      method: request.method,
+      headers,
+      body,
+      signal: controller.signal,
+    });
+
+    const filteredHeaders = new Headers();
+    response.headers.forEach((value, key) => {
+      if (ALLOWED_RESPONSE_HEADERS.has(key.toLowerCase())) {
+        filteredHeaders.set(key, value);
+      }
+    });
+
+    return new NextResponse(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: filteredHeaders,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const GET = proxy;

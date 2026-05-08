@@ -55,6 +55,8 @@ time.workspace = true
 tokio-rustls.workspace = true
 rustls-pemfile.workspace = true
 rustls-native-certs.workspace = true
+tokio-util.workspace = true
+subtle.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

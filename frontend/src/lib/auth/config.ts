@@ -50,20 +50,40 @@ validateAuthConfig();
 const issuer = process.env.AUTH_OIDC_ISSUER ?? "http://localhost:8080/dex";
 const wellKnownUrl = `${issuer}/.well-known/openid-configuration`;
 
-// Cache for OIDC discovery metadata to avoid repeated network calls.
+// Cache for OIDC discovery metadata with TTL to avoid stale endpoints.
 // Module-level cache is safe in Next.js because the module is evaluated once per process.
+const DISCOVERY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 let cachedDiscovery: Record<string, string> | null = null;
+let cachedDiscoveryAt: number | null = null;
+
+function clearDiscoveryCache() {
+  cachedDiscovery = null;
+  cachedDiscoveryAt = null;
+}
+
+function isDiscoveryCacheValid(): boolean {
+  if (!cachedDiscovery || cachedDiscoveryAt === null) return false;
+  return Date.now() - cachedDiscoveryAt < DISCOVERY_CACHE_TTL_MS;
+}
 
 async function getDiscoveryConfig(): Promise<Record<string, string>> {
-  if (cachedDiscovery) {
-    return cachedDiscovery;
+  if (isDiscoveryCacheValid()) {
+    return cachedDiscovery!;
   }
   const response = await fetch(wellKnownUrl);
   if (!response.ok) {
+    // Preserve existing cache (stale is better than broken) if it's available
+    if (cachedDiscovery) {
+      console.warn("OIDC discovery request failed; using stale cached metadata.", {
+        status: response.status,
+      });
+      return cachedDiscovery;
+    }
     throw new Error(`OIDC discovery failed: ${response.status} ${response.statusText}`);
   }
   const config = (await response.json()) as Record<string, string>;
   cachedDiscovery = config;
+  cachedDiscoveryAt = Date.now();
   return config;
 }
 
@@ -90,6 +110,7 @@ async function refreshAccessToken(token: { accessToken: string; refreshToken: st
   });
 
   if (!response.ok) {
+    clearDiscoveryCache();
     throw new Error(`Token refresh failed: ${response.status} ${response.statusText}`);
   }
 
@@ -163,7 +184,11 @@ export const authOptions: NextAuthOptions = {
         token.refreshToken = tokens.refreshToken ?? token.refreshToken;
         token.expiresAt = tokens.expiresAt;
         delete token.error;
-      } catch {
+      } catch (error) {
+        console.error("Token refresh failed", {
+          hint: "check_idp_health",
+          error: error instanceof Error ? error.message : "unknown error",
+        });
         token.error = "RefreshAccessTokenError";
       }
 

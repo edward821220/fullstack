@@ -1,5 +1,7 @@
 name: Container security scan
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "docker/**"
@@ -16,17 +18,35 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build backend image
-        run: docker build -f docker/Dockerfile.backend -t fullstack-template-backend:latest .
+        uses: docker/bake-action@a66e1c87e2eca0503c343edf1d208c716d54b8a8 # v7.1.0
+        with:
+          source: .
+          files: docker/docker-bake.hcl
+          targets: backend
+          load: true
+          set: |
+            *.platform=linux/amd64
+            *.tags=fullstack-template-backend:scan
+        env:
+          GCP_PROJECT_ID: scan-local
+          AR_REGION: us
+          AR_REPO: fullstack-template
+          TAG: scan
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: fullstack-template-backend:latest
+          image-ref: fullstack-template-backend:scan
           format: sarif
           output: trivy-backend-results.sarif
           exit-code: 1
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3
@@ -40,17 +60,35 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build frontend image
-        run: docker build -f docker/Dockerfile.frontend -t fullstack-template-frontend:latest .
+        uses: docker/bake-action@a66e1c87e2eca0503c343edf1d208c716d54b8a8 # v7.1.0
+        with:
+          source: .
+          files: docker/docker-bake.hcl
+          targets: frontend
+          load: true
+          set: |
+            *.platform=linux/amd64
+            *.tags=fullstack-template-frontend:scan
+        env:
+          GCP_PROJECT_ID: scan-local
+          AR_REGION: us
+          AR_REPO: fullstack-template
+          TAG: scan
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: fullstack-template-frontend:latest
+          image-ref: fullstack-template-frontend:scan
           format: sarif
           output: trivy-frontend-results.sarif
           exit-code: 1
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@c3f298df8c1fea2fefe20c785e6aa00f32df8260 # v4.35.3

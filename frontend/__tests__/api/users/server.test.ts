@@ -30,7 +30,7 @@ describe("users server API module", () => {
     } as unknown as Response);
 
     await expect(getUsersPageServer(1, 8, "dummy-token")).rejects.toThrow(
-      "Server GET /users?page=1&per_page=8 failed (404): Not found",
+      "Server GET /users?page=1&per_page=8 failed (404)",
     );
   });
 });

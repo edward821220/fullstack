@@ -1,9 +1,12 @@
 use config::AppConfig;
 use grpc::serve as grpc_serve;
-use infra::health_checker::DbHealthChecker;
+use infra::startup::{
+    StartupError, connect_to_database, shutdown_with_budget, wait_for_shutdown_signal,
+};
 use infra::telemetry::init_tracing;
-use repo::AnyUserRepo;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 pub enum BootstrapError {
@@ -13,6 +16,7 @@ pub enum BootstrapError {
     Telemetry(String),
     RestServer(String),
     GrpcServer(String),
+    Startup(String),
 }
 
 impl std::fmt::Display for BootstrapError {
@@ -24,11 +28,18 @@ impl std::fmt::Display for BootstrapError {
             BootstrapError::Telemetry(msg) => write!(f, "Telemetry error: {msg}"),
             BootstrapError::RestServer(msg) => write!(f, "REST server error: {msg}"),
             BootstrapError::GrpcServer(msg) => write!(f, "gRPC server error: {msg}"),
+            BootstrapError::Startup(msg) => write!(f, "Startup error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for BootstrapError {}
+
+impl From<StartupError> for BootstrapError {
+    fn from(e: StartupError) -> Self {
+        BootstrapError::Startup(e.to_string())
+    }
+}
 
 pub fn load_and_validate_config() -> Result<AppConfig, BootstrapError> {
     let config = AppConfig::load()
@@ -37,40 +48,6 @@ pub fn load_and_validate_config() -> Result<AppConfig, BootstrapError> {
         .validate()
         .map_err(|e| BootstrapError::Config(format!("Config validation failed: {e}")))?;
     Ok(config)
-}
-
-pub async fn connect_to_database(
-    config: &AppConfig,
-) -> Result<(AnyUserRepo, Arc<dyn svc::HealthChecker>), BootstrapError> {
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        match repo::connect(&config.database).await {
-            Ok((repo, probe)) => {
-                tracing::info!("Connected to database after {} attempt(s)", attempt);
-                let health = Arc::new(DbHealthChecker::new(probe));
-                return Ok((repo, health));
-            }
-            Err(e) => {
-                if attempt >= config.database.connect_retry_attempts {
-                    return Err(BootstrapError::Database(format!(
-                        "Failed to connect after {} attempts: {e}",
-                        attempt
-                    )));
-                }
-                tracing::warn!(
-                    "Database connection attempt {}/{} failed: {}. Retrying...",
-                    attempt,
-                    config.database.connect_retry_attempts,
-                    e
-                );
-                tokio::time::sleep(Duration::from_millis(
-                    config.database.connect_retry_delay_ms,
-                ))
-                .await;
-            }
-        }
-    }
 }
 
 pub async fn run_migrations(config: &AppConfig) -> Result<(), BootstrapError> {
@@ -95,8 +72,7 @@ pub async fn run(config: AppConfig) -> Result<(), BootstrapError> {
         tracing::info!("Skipping migrations on startup (run_migrations_on_startup=false)");
     }
 
-    let (rest_repo, rest_health) = connect_to_database(&config).await?;
-    let (grpc_repo, grpc_health) = connect_to_database(&config).await?;
+    let (repo, health, metrics_handle, metrics_cancel) = connect_to_database(&config).await?;
 
     let rest_addr = config
         .rest_addr()
@@ -112,57 +88,103 @@ pub async fn run(config: AppConfig) -> Result<(), BootstrapError> {
         None
     };
 
-    let config_clone = config.clone();
-    let rest_handle = tokio::spawn(async move {
+    let cancel = CancellationToken::new();
+    let rest_cancel = cancel.clone();
+    let grpc_cancel = cancel.clone();
+
+    let rest_config = config.clone();
+    let rest_repo = repo.clone();
+    let rest_health = Arc::clone(&health);
+    let mut rest_handle: tokio::task::JoinHandle<
+        Result<(), Box<dyn std::error::Error + Send + Sync>>,
+    > = tokio::spawn(async move {
         tracing::info!("REST server listening on {}", rest_addr);
-        if let Err(e) =
-            crate::rest_server::serve_rest(config_clone, rest_repo, rest_health, rest_addr).await
-        {
-            tracing::error!("REST server error: {e}");
-        }
+        crate::rest_server::serve_rest(rest_config, rest_repo, rest_health, rest_addr, rest_cancel)
+            .await
     });
 
-    let grpc_handle = if let Some(grpc_addr) = grpc_addr {
-        let config_clone2 = config.clone();
+    let mut grpc_handle: Option<
+        tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+    > = if let Some(grpc_addr) = grpc_addr {
+        let grpc_config = config.clone();
+        let grpc_repo = repo.clone();
+        let grpc_health = Arc::clone(&health);
         Some(tokio::spawn(async move {
             tracing::info!("gRPC server listening on {}", grpc_addr);
-            if let Err(e) = grpc_serve(config_clone2, grpc_repo, grpc_health, grpc_addr).await {
-                tracing::error!("gRPC server error: {e}");
-            }
+            grpc_serve(grpc_config, grpc_repo, grpc_health, grpc_addr, grpc_cancel).await
         }))
     } else {
         tracing::info!("gRPC server is disabled");
         None
     };
 
-    tokio::signal::ctrl_c().await.map_err(|e| {
-        BootstrapError::Config(format!("Failed to listen for shutdown signal: {e}"))
-    })?;
-    tracing::info!(
-        "Shutdown signal received, draining for {}s...",
-        config.server.shutdown_timeout_seconds
-    );
+    let signal_fut = wait_for_shutdown_signal();
+    tokio::pin!(signal_fut);
 
-    let timeout = Duration::from_secs(config.server.shutdown_timeout_seconds);
-
-    let rest_result = tokio::time::timeout(timeout, rest_handle).await;
-    let rest_done = rest_result.is_ok();
-
-    let grpc_done = if let Some(handle) = grpc_handle {
-        let grpc_result = tokio::time::timeout(timeout, handle).await;
-        grpc_result.is_ok()
-    } else {
-        true
+    let grpc_fut = async {
+        if let Some(ref mut h) = grpc_handle {
+            h.await
+        } else {
+            std::future::pending().await
+        }
     };
 
-    if rest_done && grpc_done {
-        tracing::info!("All services shut down gracefully");
-    } else {
-        tracing::warn!("Shutdown timeout reached (rest_ok={rest_done}, grpc_ok={grpc_done})");
+    let mut early_failure: Option<BootstrapError> = None;
+
+    tokio::select! {
+        rest = &mut rest_handle => {
+            early_failure = Some(match rest {
+                Ok(Ok(())) => BootstrapError::RestServer("REST server exited early (before shutdown signal)".to_owned()),
+                Ok(Err(e)) => BootstrapError::RestServer(format!("REST server error: {e}")),
+                Err(e) => BootstrapError::RestServer(format!("REST task panicked: {e}")),
+            });
+        }
+        grpc = grpc_fut => {
+            early_failure = Some(match grpc {
+                Ok(Ok(())) => BootstrapError::GrpcServer("gRPC server exited early (before shutdown signal)".to_owned()),
+                Ok(Err(e)) => BootstrapError::GrpcServer(format!("gRPC server error: {e}")),
+                Err(e) => BootstrapError::GrpcServer(format!("gRPC task panicked: {e}")),
+            });
+        }
+        result = &mut signal_fut => {
+            match result {
+                Ok(_) => tracing::info!("Shutdown signal received"),
+                Err(e) => {
+                    tracing::warn!("Shutdown signal handler error: {e}");
+                    early_failure = Some(BootstrapError::Startup(format!("Shutdown signal handler error: {e}")));
+                }
+            }
+        }
     }
 
-    telemetry.shutdown();
+    cancel.cancel();
 
+    let timeout = Duration::from_secs(config.server.shutdown_timeout_seconds);
+    tracing::info!("Draining for {}s...", timeout.as_secs());
+
+    let mut handles: Vec<
+        tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+    > = Vec::new();
+    handles.push(rest_handle);
+    if let Some(h) = grpc_handle {
+        handles.push(h);
+    }
+
+    if let Err(e) = shutdown_with_budget(cancel.clone(), timeout, handles).await {
+        tracing::warn!("Shutdown incomplete: {e}");
+    } else {
+        tracing::info!("All services shut down gracefully");
+    }
+
+    metrics_cancel.cancel();
+    let _ = metrics_handle.await;
+
+    telemetry.shutdown();
     tracing::info!("Goodbye.");
-    Ok(())
+
+    if let Some(e) = early_failure {
+        Err(e)
+    } else {
+        Ok(())
+    }
 }

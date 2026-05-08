@@ -12,6 +12,7 @@ async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tokio-rustls.workspace = true
 rustls-native-certs.workspace = true
 time.workspace = true

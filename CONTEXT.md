@@ -31,7 +31,7 @@ Keep setup commands and implementation checklists in `README.md`, `AGENTS.md`, o
 - **ProblemResponse** — The RFC 9457 Problem Details error response format used across all HTTP APIs.
 - **AuditEvent** — Security-relevant events emitted by `svc` and `server` layers. Lives in `svc::audit` so business logic can record audits without knowing HTTP.
 - **AuditExporter** — Strategy-pattern trait in `svc::audit`. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit`. `infra::create_audit_exporter()` is the shared factory used by both REST and gRPC servers.
-- **AuditService** — Async channel-based audit dispatcher in `svc::audit`. Held in `AppState` and injectable into `UserService`.
+- **AuditService** — Async channel-based audit dispatcher in `svc::audit`. Held in `AppState` and used by handlers and middleware. Not injected into `UserService`.
 - **AuditEventProxy / AuditEventCtx** — Serializable structs in `infra::audit` used by exporters to output structured JSON with optional HTTP context.
 - **AppError** — The HTTP error seam in `server::error`. Wraps `svc::Error` and is the only place where service failures are translated into status codes plus `ProblemResponse`.
 

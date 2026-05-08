@@ -482,7 +482,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
 
         let user = repo
             .create("alice@example.com", "Alice", model::role::Role::User, true)
@@ -503,7 +509,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
         let created = repo
             .create("bob@example.com", "Bob", model::role::Role::User, true)
             .await
@@ -523,7 +535,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
 
         let result = repo.find_by_id(uuid::Uuid::new_v4()).await.unwrap();
         assert!(result.is_none());
@@ -537,7 +555,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
         let created = repo
             .create("carol@example.com", "Carol", model::role::Role::User, true)
             .await
@@ -557,7 +581,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
         repo.create("a@example.com", "A", model::role::Role::User, true)
             .await
             .unwrap();
@@ -578,7 +608,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
 
         let user = repo
             .create("jit@example.com", "JIT User", model::role::Role::User, true)
@@ -622,7 +658,13 @@ mod tests {
 
         migration::run(&config).await.unwrap();
 
-        let (repo, _probe) = crate::connect(&config).await.unwrap();
+        let (repo, _probe, _metrics) = crate::connect(
+            &config,
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
 
         let mut tx = repo.begin_transaction().await.unwrap();
         let user = repo

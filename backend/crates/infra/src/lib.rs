@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod health_checker;
+pub mod startup;
 pub mod telemetry;
 
 use config::AuditConfig;

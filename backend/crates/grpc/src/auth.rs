@@ -66,7 +66,7 @@ impl GrpcAuthState {
     }
 
     /// Resolve the JWKS URI from config (manual or discovery).
-    fn resolve_jwks_uri(&self) -> Result<String, Status> {
+    async fn resolve_jwks_uri(&self) -> Result<String, Status> {
         match self.config.discovery_mode {
             DiscoveryMode::Manual => self
                 .config
@@ -76,15 +76,33 @@ impl GrpcAuthState {
                 .ok_or_else(|| {
                     Status::internal("JWKS URI not configured for manual discovery mode")
                 }),
-            DiscoveryMode::Discovery => Err(Status::internal(
-                "JWKS cache miss in discovery mode; cache should be primed at startup",
-            )),
+            DiscoveryMode::Discovery => {
+                let discovery_url = format!(
+                    "{}/.well-known/openid-configuration",
+                    self.config.issuer_url.trim_end_matches('/')
+                );
+                let meta: serde_json::Value = self
+                    .client
+                    .get(&discovery_url)
+                    .send()
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to fetch OIDC discovery: {e}")))?
+                    .json()
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to parse OIDC discovery: {e}"))
+                    })?;
+                meta.get("jwks_uri")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_owned())
+                    .ok_or_else(|| Status::internal("OIDC discovery missing jwks_uri"))
+            }
         }
     }
 
     /// Asynchronously fetch JWKS and update the cache.
     pub async fn refresh_jwks(&self) -> Result<(), Status> {
-        let uri = self.resolve_jwks_uri()?;
+        let uri = self.resolve_jwks_uri().await?;
         let response = self
             .client
             .get(&uri)
@@ -239,13 +257,11 @@ impl tonic::service::Interceptor for GrpcAuthInterceptor {
 
         // Attach validated identity to the request metadata so handlers can use it.
         let mut req = request;
-        req.metadata_mut().insert(
-            "x-auth-sub",
-            claims
-                .sub
-                .parse()
-                .unwrap_or_else(|_| "unknown".parse().unwrap()),
-        );
+        let sub_value = claims
+            .sub
+            .parse()
+            .map_err(|_| Status::unauthenticated("Invalid sub claim in token"))?;
+        req.metadata_mut().insert("x-auth-sub", sub_value);
         Ok(req)
     }
 }

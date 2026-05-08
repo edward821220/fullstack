@@ -86,8 +86,14 @@ project-root/
 │   ├── adr/                  # Architecture Decision Records
 │   └── openapi.json          # Generated OpenAPI spec (source of truth for FE types)
 ├── proto/                    # gRPC protobuf definitions (language-agnostic)
-├── docker/                   # Dockerfiles
-└── docker-compose.yml        # Local dev environment
+├── docker/                   # Production Dockerfiles
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   └── dev/                 # Local dev only (excluded from prod builds)
+│       ├── docker-compose.yml
+│       └── dex/
+├── docker/
+│   ├── docker-bake.hcl       # Multi-platform buildx config (CI + local)
 ```
 
 ---
@@ -107,10 +113,20 @@ project-root/
 - **Auth**: OIDC Bearer token. JWT validated via JWKS (jsonwebtoken crate, manual discovery or manual endpoints). Algorithm restricted to `auth.allowed_algorithms` allowlist. Supports `auth.require_email_verified` and `auth.clock_skew_seconds`. JIT user provisioning with email domain whitelist and role resolution via `ProvisioningPolicy`. **Auth is enabled by default**; local development requires `local.yaml` to explicitly disable it.
 - **Authorization**: IdP-driven RBAC. The IdP is the authority for role assignment. On each request with a valid token, the middleware syncs the user's `role`, `display_name`, and `email_verified` from the current OIDC claims. Role is derived from claims via `ProvisioningPolicy::resolve_role()`, which maps well-known role names (admin/administrator/superuser → admin, manager/supervisor → manager) from the configured claim source (`roles` or `groups`). Hierarchical: Admin > Manager > User. Routes: list/get/update require Manager+; create/delete require Admin. When auth is disabled, all requests pass through.
 - **Repository pattern**: Service depends on `UserRepo` trait. Both `MssqlUserRepo` (tiberius) and `PostgresUserRepo` (sqlx) are implemented under `repo/src/user_repo/`. Adapter-specific testcontainers tests live in the same file as the adapter (`#[cfg(test)]`). A `test-helpers` feature provides `MockUserRepo` for upstream unit tests.
-- **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Non-local environments require `grpc.tls.enabled: true`, `grpc.auth_enabled: true`, and `grpc.tls.ca_cert_path` for mTLS client verification. `grpc.auth_enabled` adds real JWT validation via sync JWKS cache with background refresh.
-- **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default. Implementations (`NoopExporter`, `SyslogExporter`, `OtelLogsExporter`) live in `infra::audit` and are constructed via `infra::create_audit_exporter()` so both REST and gRPC binaries share the same factory logic. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields.
+- **gRPC**: Port 50051. Service-to-service only. Provides `health.v1.HealthService` with `HealthCheck` for k8s probes. Non-local environments require `grpc.tls.enabled: true`, `grpc.auth_enabled: true`, and `grpc.tls.ca_cert_path` for mTLS client verification. `grpc.auth_enabled` must be explicitly set to `true` to enable real JWT validation via sync JWKS cache with background refresh.
+- **Audit**: `AuditExporter` trait (Strategy pattern) with `NoopExporter` default lives in `infra::audit`. `AuditService` uses a bounded async channel for backpressure (drops events when full with explicit metrics). Export retry: 3x exponential backoff. PII redaction via `audit.pii_mode: redact` masks email and sub fields.
 - **Optimistic Locking**: `users` table has a `version` column. `UPDATE` increments `version` and checks `WHERE id = ? AND version = ?`, returning `409 CONFLICT` on stale data.
 - **Tracing**: `#[tracing::instrument]` on service functions. Request ID via `x-request-id` header.
+
+### Docker Build
+
+- **Build tool**: `docker buildx bake -f docker/docker-bake.hcl` (reads `docker/docker-bake.hcl`). Do not use ad-hoc `docker build` CLI flags. Use `docker/bake-action` in CI workflows.
+- **Multi-platform**: Default targets are `linux/amd64,linux/arm64`. Override with `--set *.platforms=linux/amd64` for local smoke tests.
+- **Image tags**: CI pushes both `${SHA}` and `latest` tags. `latest` tag is added via `--set backend.tags+=` / `--set frontend.tags+=` in the push workflow. The HCL default `TAG` is only used for local builds.
+- **Registry auth**: CI uses `google-github-actions/auth` with `token_format: access_token` + `docker/login-action` (no gcloud CLI install needed). Username = `oauth2accesstoken`, password = the access token.
+- **CI workflow**: `.github/workflows/docker-push.yml` uses Workload Identity Federation (no service account keys). Has `concurrency` to cancel superseded runs. Requires GitHub repo variables: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `AR_REGION`, `AR_REPO`.
+- **Local dev compose**: `docker/dev/docker-compose.yml` (mssql/postgres + dex). Not included in production build context (see `.dockerignore`).
+- **Container scanning**: `.github/workflows/container-scan.yml` uses `docker/bake-action` with `load: true` and `linux/amd64` only (same packages across arch). Sets a local scan tag to avoid needing registry credentials.
 
 ### Frontend
 

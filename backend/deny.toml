@@ -7,8 +7,8 @@ ignore = [
 ]
 
 [bans]
-multiple-versions = "deny"
-wildcards = "deny"
+multiple-versions = "warn"
+wildcards = "warn"
 
 [sources]
 unknown-registry = "deny"

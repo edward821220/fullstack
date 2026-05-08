@@ -17,7 +17,8 @@ async-trait.workspace = true
 snafu.workspace = true
 uuid.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["net"] }
+tokio = { workspace = true, features = ["net", "time"] }
+metrics.workspace = true
 
 [features]
 default = []
