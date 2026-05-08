@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     config.validate()?;
 
-    let telemetry = init_tracing(&config)?;
+    let mut telemetry = init_tracing(&config)?;
 
     migration::run(&config.database)
         .await

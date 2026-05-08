@@ -563,6 +563,13 @@
             ],
             "maxLength": 100,
             "minLength": 1
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         },
         "additionalProperties": false

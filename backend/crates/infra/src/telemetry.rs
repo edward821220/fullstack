@@ -7,11 +7,21 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 
 pub struct TelemetryGuard {
     tracer_provider: Option<SdkTracerProvider>,
+    shut_down: bool,
 }
 
 impl TelemetryGuard {
-    pub fn shutdown(self) {
-        if let Some(provider) = self.tracer_provider {
+    pub fn shutdown(&mut self) {
+        if let Some(provider) = self.tracer_provider.take() {
+            let _ = provider.shutdown();
+        }
+        self.shut_down = true;
+    }
+}
+
+impl Drop for TelemetryGuard {
+    fn drop(&mut self) {
+        if let Some(provider) = self.tracer_provider.take() {
             let _ = provider.shutdown();
         }
     }
@@ -25,7 +35,10 @@ pub fn init_tracing(config: &AppConfig) -> Result<TelemetryGuard, String> {
         None => init_subscriber_without_otel(config)?,
     }
 
-    Ok(TelemetryGuard { tracer_provider })
+    Ok(TelemetryGuard {
+        tracer_provider,
+        shut_down: false,
+    })
 }
 
 fn build_env_filter(config: &AppConfig) -> EnvFilter {

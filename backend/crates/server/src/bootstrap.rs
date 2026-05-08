@@ -3,7 +3,7 @@ use grpc::serve as grpc_serve;
 use infra::startup::{
     StartupError, connect_to_database, shutdown_with_budget, wait_for_shutdown_signal,
 };
-use infra::telemetry::init_tracing;
+use infra::telemetry::TelemetryGuard;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,7 +18,6 @@ pub enum BootstrapError {
     Config(String),
     Database(String),
     Migration(String),
-    Telemetry(String),
     RestServer(String),
     GrpcServer(String),
     Startup(String),
@@ -30,7 +29,6 @@ impl std::fmt::Display for BootstrapError {
             BootstrapError::Config(msg) => write!(f, "Config error: {msg}"),
             BootstrapError::Database(msg) => write!(f, "Database error: {msg}"),
             BootstrapError::Migration(msg) => write!(f, "Migration error: {msg}"),
-            BootstrapError::Telemetry(msg) => write!(f, "Telemetry error: {msg}"),
             BootstrapError::RestServer(msg) => write!(f, "REST server error: {msg}"),
             BootstrapError::GrpcServer(msg) => write!(f, "gRPC server error: {msg}"),
             BootstrapError::Startup(msg) => write!(f, "Startup error: {msg}"),
@@ -126,12 +124,15 @@ pub async fn run_migrations(config: &AppConfig) -> Result<(), BootstrapError> {
     Ok(())
 }
 
-/// Orchestrate the full server lifecycle: tracing, migrations, DB connection,
+/// Orchestrate the full server lifecycle: migrations, DB connection,
 /// REST + gRPC server startup, graceful shutdown.
-pub async fn run(config: AppConfig) -> Result<(), BootstrapError> {
+/// Telemetry is initialized in main() and passed in so its lifetime
+/// covers the entire process including shutdown.
+pub async fn run_with_telemetry(
+    config: AppConfig,
+    telemetry: &mut TelemetryGuard,
+) -> Result<(), BootstrapError> {
     infra::ensure_jwt_crypto_provider();
-
-    let telemetry = init_tracing(&config).map_err(|e| BootstrapError::Telemetry(e.to_string()))?;
 
     if config.database.run_migrations_on_startup {
         run_migrations(&config).await?;

@@ -39,7 +39,7 @@ async fn main() {
         }
         Some(Command::Migrate) => {
             let config = load_config_or_exit(cli.config_dir);
-            let telemetry = init_telemetry_or_exit(&config);
+            let mut telemetry = init_telemetry_or_exit(&config);
             if let Err(e) = server::bootstrap::run_migrations(&config).await {
                 tracing::error!("{e}");
                 telemetry.shutdown();
@@ -49,7 +49,8 @@ async fn main() {
         }
         Some(Command::Serve) | None => {
             let config = load_config_or_exit(cli.config_dir);
-            if let Err(e) = server::bootstrap::run(config).await {
+            let mut telemetry = init_telemetry_or_exit(&config);
+            if let Err(e) = server::bootstrap::run_with_telemetry(config, &mut telemetry).await {
                 tracing::error!("{e}");
                 process::exit(1);
             }
