@@ -111,8 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             match result {
                 Ok(_) => tracing::info!("Shutdown signal received"),
                 Err(e) => {
-                    tracing::warn!("Shutdown signal handler error: {e}");
-                    early_failure = Some(Box::new(std::io::Error::other(format!("Shutdown signal handler error: {e}"))) as Box<dyn std::error::Error + Send + Sync>);
+                    early_failure = Some(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
                 }
             }
         }

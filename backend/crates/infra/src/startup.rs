@@ -1,5 +1,6 @@
 use config::AppConfig;
 use repo::AnyUserRepo;
+use snafu::Snafu;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -10,22 +11,15 @@ pub enum ShutdownReason {
     SigTerm,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Snafu)]
 pub enum StartupError {
-    Config(String),
-    Database(String),
+    #[snafu(display("Database error: {message}"))]
+    Database { message: String },
+    #[snafu(display("Signal handler error: {message}"))]
+    Signal { message: String },
+    #[snafu(display("Shutdown error: {message}"))]
+    Shutdown { message: String },
 }
-
-impl std::fmt::Display for StartupError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            StartupError::Config(msg) => write!(f, "Config error: {msg}"),
-            StartupError::Database(msg) => write!(f, "Database error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for StartupError {}
 
 /// Connect to the database with retry logic, returning a shared repo, health checker,
 /// the background pool-metrics task handle, and the cancellation token used by the metrics task.
@@ -55,10 +49,9 @@ pub async fn connect_to_database(
             }
             Err(e) => {
                 if attempt >= config.database.connect_retry_attempts {
-                    return Err(StartupError::Database(format!(
-                        "Failed to connect after {} attempts: {e}",
-                        attempt
-                    )));
+                    return Err(StartupError::Database {
+                        message: format!("Failed to connect after {} attempts: {e}", attempt),
+                    });
                 }
                 tracing::warn!(
                     "Database connection attempt {}/{} failed: {}. Retrying...",
@@ -78,21 +71,28 @@ pub async fn connect_to_database(
 /// Wait for an OS shutdown signal (SIGINT or SIGTERM).
 ///
 /// Returns an error if the signal handler installation or await fails.
-pub async fn wait_for_shutdown_signal() -> Result<ShutdownReason, std::io::Error> {
-    let ctrl_c = async { tokio::signal::ctrl_c().await.map(|_| ShutdownReason::CtrlC) };
+pub async fn wait_for_shutdown_signal() -> Result<ShutdownReason, StartupError> {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .map(|_| ShutdownReason::CtrlC)
+            .map_err(|e| StartupError::Signal {
+                message: format!("failed to install CtrlC handler: {e}"),
+            })
+    };
 
     #[cfg(unix)]
     let terminate = async {
         let mut stream = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .map_err(|e| {
-                std::io::Error::other(format!("failed to install SIGTERM handler: {e}"))
+            .map_err(|e| StartupError::Signal {
+                message: format!("failed to install SIGTERM handler: {e}"),
             })?;
         stream.recv().await;
         Ok(ShutdownReason::SigTerm)
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<Result<ShutdownReason, std::io::Error>>();
+    let terminate = std::future::pending::<Result<ShutdownReason, StartupError>>();
 
     tokio::select! {
         result = ctrl_c => {
@@ -117,7 +117,7 @@ pub async fn shutdown_with_budget(
     cancel: CancellationToken,
     timeout: Duration,
     handles: Vec<tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>>,
-) -> Result<(), String> {
+) -> Result<(), StartupError> {
     cancel.cancel();
 
     let joined = async {
@@ -141,9 +141,13 @@ pub async fn shutdown_with_budget(
             if errors.is_empty() {
                 Ok(())
             } else {
-                Err(errors.join(", "))
+                Err(StartupError::Shutdown {
+                    message: errors.join(", "),
+                })
             }
         }
-        Err(_) => Err(format!("Shutdown timed out after {}s", timeout.as_secs())),
+        Err(_) => Err(StartupError::Shutdown {
+            message: format!("Shutdown timed out after {}s", timeout.as_secs()),
+        }),
     }
 }

@@ -40,7 +40,12 @@ impl std::error::Error for BootstrapError {}
 
 impl From<StartupError> for BootstrapError {
     fn from(e: StartupError) -> Self {
-        BootstrapError::Startup(e.to_string())
+        match e {
+            StartupError::Database { message } => BootstrapError::Database(message),
+            StartupError::Signal { message } | StartupError::Shutdown { message } => {
+                BootstrapError::Startup(message)
+            }
+        }
     }
 }
 
@@ -226,8 +231,7 @@ pub async fn run_with_telemetry(
             match result {
                 Ok(_) => tracing::info!("Shutdown signal received"),
                 Err(e) => {
-                    tracing::warn!("Shutdown signal handler error: {e}");
-                    early_failure = Some(BootstrapError::Startup(format!("Shutdown signal handler error: {e}")));
+                    early_failure = Some(BootstrapError::from(e));
                 }
             }
         }
