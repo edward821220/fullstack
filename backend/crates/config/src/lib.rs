@@ -4,6 +4,8 @@ use snafu::Snafu;
 pub mod loader;
 pub mod validation;
 
+pub use loader::ConfigDir;
+
 fn default_metrics_enabled() -> bool {
     true
 }
@@ -57,7 +59,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     /// Returns true when the deployment environment is explicitly `local`.
-    /// All non-local environments (development, staging, production) are treated
+    /// All non-local environments (sandbox, staging, production) are treated
     /// as "remote" for security checks that should not apply to a developer laptop.
     pub fn is_local(&self) -> bool {
         self.server.environment.is_local()
@@ -96,7 +98,7 @@ fn default_environment() -> Environment {
 #[serde(rename_all = "lowercase")]
 pub enum Environment {
     Local,
-    Development,
+    Sandbox,
     Staging,
     #[default]
     Production,

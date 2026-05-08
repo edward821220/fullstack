@@ -79,11 +79,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-opentelemetry = "0.32"
 opentelemetry = "0.31"
-opentelemetry-otlp = { version = "0.31", features = [
+opentelemetry-otlp = { version = "0.31", default-features = false, features = [
   "trace",
   "grpc-tonic",
   "http-proto",
-  "reqwest-client",
+  "reqwest-blocking-client",
 ] }
 opentelemetry_sdk = "0.31"
 # Error handling
@@ -111,7 +111,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 utoipa = { version = "5", features = ["axum_extras", "uuid"] }
 utoipa-scalar = { version = "0.3", features = ["axum"] }
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
 async-trait = "0.1"

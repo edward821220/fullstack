@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const env = process.env.ENVIRONMENT ?? "production";
-const isLax = env === "local" || env === "test" || env === "development";
+const isLax = env === "local" || env === "test" || env === "sandbox";
 
 export function proxy(request: NextRequest) {
-  // Only local, test, and development skip strict CSP to preserve dev experience.
+  // Only local, test, and sandbox skip strict CSP to preserve dev experience.
   // Staging and production must enforce nonce-based CSP.
   if (isLax) {
     return NextResponse.next();

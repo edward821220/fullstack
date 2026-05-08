@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 config = { path = "../config" }
+clap.workspace = true
 refinery.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true

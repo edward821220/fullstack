@@ -165,7 +165,7 @@ impl AppConfig {
         }
 
         // Metrics fail-closed: require auth token when enabled in production.
-        // Development and staging may run metrics without a token for debugging.
+        // Sandbox and staging may run metrics without a token for debugging.
         if self.observability.metrics_enabled && self.is_production() {
             let token_set = self
                 .observability

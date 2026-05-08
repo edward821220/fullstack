@@ -36,6 +36,7 @@ export type Role = "admin" | "manager" | "user";
 
 export type UpdateUserRequest = {
   display_name?: string | null;
+  version?: number | null;
 };
 
 export type UserResponse = {

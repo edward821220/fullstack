@@ -20,6 +20,7 @@ dto = { path = "../dto" }
 config = { path = "../config" }
 migration = { path = "../migration" }
 infra = { path = "../infra" }
+clap.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 tonic-prost.workspace = true

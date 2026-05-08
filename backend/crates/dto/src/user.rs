@@ -61,7 +61,8 @@ fn is_valid_email_format(email: &str) -> bool {
     if local.is_empty() || domain.is_empty() {
         return false;
     }
-    if !domain.contains('.') {
+    // Allow localhost for development; otherwise require a dot in the domain.
+    if !domain.contains('.') && !domain.eq_ignore_ascii_case("localhost") {
         return false;
     }
     // Reject obvious control characters or whitespace inside the string
@@ -96,6 +97,8 @@ impl CreateUserRequest {
 pub struct UpdateUserRequest {
     #[schema(min_length = 1, max_length = 100)]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub version: Option<i64>,
 }
 
 impl UpdateUserRequest {

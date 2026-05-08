@@ -1,16 +1,76 @@
+use clap::Parser;
 use config::AppConfig;
 use grpc::serve;
 use infra::startup::{connect_to_database, shutdown_with_budget, wait_for_shutdown_signal};
 use infra::telemetry::init_tracing;
+use std::future::Future;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+type ServeTaskResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+type ServeTaskHandle = tokio::task::JoinHandle<ServeTaskResult>;
+
+#[derive(Parser)]
+#[command(name = "grpc-server")]
+struct Cli {
+    #[arg(long, env = "APP_CONFIG_DIR")]
+    config_dir: Option<PathBuf>,
+}
+
+fn spawn_monitored_serve_task<F>(
+    future: F,
+    shutdown: CancellationToken,
+    failure_tx: tokio::sync::mpsc::Sender<Box<dyn std::error::Error + Send + Sync>>,
+) -> ServeTaskHandle
+where
+    F: Future<Output = ServeTaskResult> + Send + 'static,
+{
+    let handle: ServeTaskHandle = tokio::spawn(future);
+
+    tokio::spawn(async move {
+        match handle.await {
+            Ok(result) => {
+                if !shutdown.is_cancelled() {
+                    let failure: Box<dyn std::error::Error + Send + Sync> = match &result {
+                        Ok(()) => "gRPC server exited early (before shutdown signal)".into(),
+                        Err(e) => {
+                            Box::new(std::io::Error::other(format!("gRPC server error: {e}")))
+                        }
+                    };
+                    let _ = failure_tx.send(failure).await;
+                }
+                result
+            }
+            Err(e) => {
+                let message = e.to_string();
+                if !shutdown.is_cancelled() {
+                    let _ = failure_tx
+                        .send(Box::new(std::io::Error::other(format!(
+                            "gRPC task panicked: {message}"
+                        )))
+                            as Box<dyn std::error::Error + Send + Sync>)
+                        .await;
+                }
+                Err(Box::new(std::io::Error::other(message))
+                    as Box<dyn std::error::Error + Send + Sync>)
+            }
+        }
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = AppConfig::load()?;
+    let cli = Cli::parse();
+
+    let config = if let Some(dir) = cli.config_dir {
+        AppConfig::load_with_config_dir(dir)?
+    } else {
+        AppConfig::load()?
+    };
     config.validate()?;
 
-    let telemetry = init_tracing(&config)?;
+    let mut telemetry = init_tracing(&config)?;
 
     migration::run(&config.database)
         .await
@@ -23,14 +83,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing::info!("Standalone gRPC server listening on {}", addr);
 
     let cancel = CancellationToken::new();
+    let (failure_tx, mut failure_rx) = tokio::sync::mpsc::channel(1);
     let serve_cancel = cancel.clone();
 
     let config_for_serve = config.clone();
-    let mut serve_handle: tokio::task::JoinHandle<
-        Result<(), Box<dyn std::error::Error + Send + Sync>>,
-    > = tokio::spawn(
+    let serve_handle = spawn_monitored_serve_task(
         async move { serve(config_for_serve, repo, health, addr, serve_cancel).await },
+        cancel.clone(),
+        failure_tx.clone(),
     );
+
+    drop(failure_tx);
 
     let signal_fut = wait_for_shutdown_signal();
     tokio::pin!(signal_fut);
@@ -38,19 +101,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut early_failure: Option<Box<dyn std::error::Error + Send + Sync>> = None;
 
     tokio::select! {
-        result = &mut serve_handle => {
-            early_failure = Some(match result {
-                Ok(Ok(())) => "gRPC server exited early (before shutdown signal)".into(),
-                Ok(Err(e)) => Box::new(std::io::Error::other(format!("gRPC server error: {e}"))) as Box<dyn std::error::Error + Send + Sync>,
-                Err(e) => Box::new(std::io::Error::other(format!("gRPC task panicked: {e}"))) as Box<dyn std::error::Error + Send + Sync>,
+        failure = failure_rx.recv() => {
+            early_failure = Some(match failure {
+                Some(failure) => failure,
+                None => Box::new(std::io::Error::other("gRPC server monitor exited unexpectedly")) as Box<dyn std::error::Error + Send + Sync>,
             });
         }
         result = &mut signal_fut => {
             match result {
                 Ok(_) => tracing::info!("Shutdown signal received"),
                 Err(e) => {
-                    tracing::warn!("Shutdown signal handler error: {e}");
-                    early_failure = Some(Box::new(std::io::Error::other(format!("Shutdown signal handler error: {e}"))) as Box<dyn std::error::Error + Send + Sync>);
+                    early_failure = Some(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
                 }
             }
         }

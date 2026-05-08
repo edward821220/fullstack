@@ -33,7 +33,12 @@ pub trait UserRepo: Send + Sync + Clone {
         role: Role,
         email_verified: bool,
     ) -> Result<User>;
-    async fn update(&self, id: Uuid, display_name: Option<&str>) -> Result<User>;
+    async fn update(
+        &self,
+        id: Uuid,
+        display_name: Option<&str>,
+        version: Option<i64>,
+    ) -> Result<User>;
     async fn delete(&self, id: Uuid) -> Result<()>;
     async fn list(&self, page: u64, per_page: u64) -> Result<(Vec<User>, u64)>;
 

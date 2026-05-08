@@ -144,7 +144,17 @@ APP_SERVER__ENVIRONMENT=production
 APP_OBSERVABILITY__OTLP__ENABLED=true
 ```
 
-`server.environment` (`local` | `development` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
+By default, the server looks for `config/default.yaml` and `config/local.yaml` relative to the working directory. Override the config directory with `--config-dir <path>` or `APP_CONFIG_DIR` env var (CLI flag takes precedence). This is useful for K8s deployments where config is mounted at a different path:
+
+```bash
+# Via CLI flag
+server --config-dir /etc/app/config
+
+# Via environment variable
+APP_CONFIG_DIR=/etc/app/config server
+```
+
+`server.environment` (`local` | `sandbox` | `staging` | `production`) controls security strictness: production enforces all checks, local disables most for developer convenience.
 
 Default database is MS SQL Server. Switch to PostgreSQL by setting `database.driver: postgres`.
 
@@ -160,7 +170,7 @@ To connect a real IdP, set these in `frontend/.env.local`:
 
 | Variable | Description |
 |----------|-------------|
-| `ENVIRONMENT` | `local` / `development` / `staging` / `production` — controls CSP and auth validation strictness |
+| `ENVIRONMENT` | `local` / `sandbox` / `staging` / `production` — controls CSP and auth validation strictness |
 | `AUTH_OIDC_ID` | OIDC client ID |
 | `AUTH_OIDC_SECRET` | OIDC client secret |
 | `AUTH_OIDC_ISSUER` | OIDC issuer URL |
